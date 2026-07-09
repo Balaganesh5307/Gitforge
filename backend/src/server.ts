@@ -439,6 +439,8 @@ app.put('/api/repos/:repoId/issues/:issueId', (req, res) => {
   if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
   // Update allowed fields
+  if (updateData.title !== undefined) issue.title = updateData.title;
+  if (updateData.description !== undefined) issue.description = updateData.description;
   if (updateData.status) {
     const oldStatus = issue.status;
     issue.status = updateData.status;
