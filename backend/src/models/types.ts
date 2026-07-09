@@ -90,6 +90,7 @@ export interface Issue {
   assignees: string[];
   labels: string[];
   comments: IssueComment[];
+  milestone?: string;
   createdAt: string;
 }
 

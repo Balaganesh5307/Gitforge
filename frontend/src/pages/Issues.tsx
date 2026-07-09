@@ -14,13 +14,11 @@ import {
   Trash2,
   MessageSquare,
   Edit,
-  UserPlus,
-  Bookmark,
-  TrendingUp,
-  AlertTriangle,
-  Play,
+  ArrowRight,
   RotateCcw,
-  ArrowRight
+  Sparkles,
+  Bookmark,
+  Smile
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -29,6 +27,14 @@ interface IssuesProps {
   members: Member[];
   onRefreshRepo: () => void;
 }
+
+// Available Milestone Options
+const AVAILABLE_MILESTONES = [
+  'Sprint 1 - Authentication Core',
+  'Sprint 2 - Code Visualizer Layouts',
+  'Sprint 3 - Release Checks',
+  'Backlog'
+];
 
 export const IssuesPage: React.FC<IssuesProps> = ({
   repoId,
@@ -46,6 +52,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
   const [assignee, setAssignee] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [newLabelInput, setNewLabelInput] = useState('');
+  const [milestone, setMilestone] = useState('');
 
   // Editing states
   const [isEditing, setIsEditing] = useState(false);
@@ -54,6 +61,9 @@ export const IssuesPage: React.FC<IssuesProps> = ({
 
   // Comment state
   const [commentText, setCommentText] = useState('');
+
+  // Comment Reactions State Map (Mapped by commentId -> emoji -> count)
+  const [commentReactions, setCommentReactions] = useState<Record<string, Record<string, number>>>({});
 
   // Filtering states
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,6 +87,34 @@ export const IssuesPage: React.FC<IssuesProps> = ({
   }, [repoId]);
 
   const activeIssue = issues.find(i => i.id === activeIssueId);
+
+  // Apply templates selection helper
+  const handleSelectTemplate = (type: 'bug' | 'feature' | 'blank') => {
+    if (type === 'bug') {
+      setTitle('[BUG] ');
+      setDescription(`### Describe the bug\n\n\n### Steps to reproduce\n1. \n2. \n\n### Expected behavior\n`);
+    } else if (type === 'feature') {
+      setTitle('[FEATURE] ');
+      setDescription(`### Problem description\n\n\n### Proposed solution\n`);
+    } else {
+      setTitle('');
+      setDescription('');
+    }
+  };
+
+  // Trigger local reactions increment helper
+  const handleAddReaction = (commentId: string, emoji: string) => {
+    setCommentReactions(prev => {
+      const reactions = prev[commentId] || { '👍': 0, '🎉': 0, '❤️': 0, '🚀': 0 };
+      return {
+        ...prev,
+        [commentId]: {
+          ...reactions,
+          [emoji]: (reactions[emoji] || 0) + 1
+        }
+      };
+    });
+  };
 
   // Start Edit Mode
   const handleStartEdit = () => {
@@ -124,7 +162,8 @@ export const IssuesPage: React.FC<IssuesProps> = ({
           description,
           priority,
           assignees: assignee ? [assignee] : [],
-          labels: selectedLabels
+          labels: selectedLabels,
+          milestone
         })
       });
 
@@ -134,6 +173,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
         setDescription('');
         setSelectedLabels([]);
         setAssignee('');
+        setMilestone('');
         await fetchIssues();
         onRefreshRepo();
       }
@@ -189,6 +229,23 @@ export const IssuesPage: React.FC<IssuesProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignees: updated })
+      });
+      if (response.ok) {
+        await fetchIssues();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Update Milestone directly inside issue sidebar details
+  const handleUpdateIssueMilestone = async (mName: string) => {
+    if (!activeIssue) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/issues/${activeIssue.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ milestone: mName })
       });
       if (response.ok) {
         await fetchIssues();
@@ -318,13 +375,42 @@ export const IssuesPage: React.FC<IssuesProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* 1. CREATION SCREEN */}
+      {/* 1. CREATION SCREEN WITH TEMPLATE CHIPS */}
       {isCreating && (
         <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4 text-left">
-          <h2 className="text-md font-bold text-gray-200">Open a New Issue</h2>
+          
+          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+            <h2 className="text-md font-bold text-gray-200">Open a New Issue</h2>
+            
+            {/* Template Selector */}
+            <div className="flex gap-1.5 text-[9px] font-mono font-bold select-none">
+              <button
+                type="button"
+                onClick={() => handleSelectTemplate('bug')}
+                className="px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all"
+              >
+                🐛 Bug Template
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectTemplate('feature')}
+                className="px-2 py-1 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all"
+              >
+                💡 Feature Template
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectTemplate('blank')}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-all"
+              >
+                General/Blank
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleCreateIssue} className="space-y-4">
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                   Priority
@@ -332,7 +418,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as any)}
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
                 >
                   <option value="low">🟢 Low</option>
                   <option value="medium">🟡 Medium</option>
@@ -347,12 +433,28 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                 <select
                   value={assignee}
                   onChange={(e) => setAssignee(e.target.value)}
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
                 >
                   <option value="">No assignee</option>
                   <option value="you">You (Owner)</option>
                   {members.filter(m => m.role === 'bot').map(m => (
                     <option key={m.id} value={m.username}>{m.username}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
+                  Milestone Target
+                </label>
+                <select
+                  value={milestone}
+                  onChange={(e) => setMilestone(e.target.value)}
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
+                >
+                  <option value="">No milestone</option>
+                  {AVAILABLE_MILESTONES.map(m => (
+                    <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
               </div>
@@ -379,12 +481,11 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Explain the error/enhancement in details..."
-                rows={4}
-                className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 placeholder-gray-600"
+                rows={5}
+                className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 placeholder-gray-600 font-mono text-xs leading-relaxed"
               />
             </div>
 
-            {/* Labels creation input */}
             <div>
               <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                 Add Labels
@@ -464,13 +565,13 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full bg-[#05080f] border border-white/10 rounded-xl px-4 py-2.5 text-md font-bold text-gray-200 focus:outline-none focus:border-purple-500/40"
+                  className="w-full bg-[#05080f] border border-white/10 rounded-xl px-4 py-2.5 text-md font-bold text-gray-200 focus:outline-none focus:border-purple-500/40 font-mono"
                 />
                 <textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={4}
-                  className="w-full bg-[#05080f] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-purple-500/40"
+                  className="w-full bg-[#05080f] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-purple-500/40 font-mono"
                 />
                 <div className="flex gap-2">
                   <button
@@ -496,7 +597,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                     <span className="text-gray-500 font-mono">#{activeIssue.id.replace('iss-', '')}</span>
                   </h2>
                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1 ${
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
                       activeIssue.status === 'done'
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                         : 'bg-purple-500/10 border-purple-500/30 text-purple-400'
@@ -535,7 +636,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
           {/* Details grid layout */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* LEFT: Description and Comments Thread */}
+            {/* LEFT: Description and Comments Timeline Thread */}
             <div className="lg:col-span-2 space-y-6">
               
               {/* Description Body */}
@@ -553,15 +654,38 @@ export const IssuesPage: React.FC<IssuesProps> = ({
 
               {/* Comments Timeline */}
               <div className="space-y-4">
-                {activeIssue.comments.map((comment) => (
-                  <div key={comment.id} className="glass-panel p-4 rounded-xl border border-white/5 bg-[#090d16]/40">
-                    <div className="flex justify-between items-center text-[10px] font-mono text-dark-muted border-b border-white/[0.03] pb-1.5 mb-2.5">
-                      <span className="font-bold text-gray-300">{comment.author === 'you' ? 'You' : comment.author} commented</span>
-                      <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                {activeIssue.comments.map((comment) => {
+                  const reactions = commentReactions[comment.id] || { '👍': 0, '🎉': 0, '❤️': 0, '🚀': 0 };
+                  
+                  return (
+                    <div key={comment.id} className="glass-panel p-4 rounded-xl border border-white/5 bg-[#090d16]/40 text-left space-y-2">
+                      <div className="flex justify-between items-center text-[10px] font-mono text-dark-muted border-b border-white/[0.03] pb-1.5 mb-2.5">
+                        <span className="font-bold text-gray-300">{comment.author === 'you' ? 'You' : comment.author} commented</span>
+                        <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                      </div>
+                      <p className="text-xs text-gray-300 leading-normal">{comment.body}</p>
+
+                      {/* EMOJI REACTIONS SECTION */}
+                      <div className="flex flex-wrap gap-2 items-center pt-2 border-t border-white/[0.02]">
+                        {Object.entries(reactions).map(([emoji, count]) => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleAddReaction(comment.id, emoji)}
+                            className={`px-2 py-0.5 rounded border text-[9px] font-bold font-mono transition-all flex items-center gap-1 ${
+                              count > 0 
+                                ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                                : 'bg-white/5 border-white/5 text-gray-500 hover:bg-white/10'
+                            }`}
+                          >
+                            <span>{emoji}</span>
+                            {count > 0 && <span>{count}</span>}
+                          </button>
+                        ))}
+                      </div>
+
                     </div>
-                    <p className="text-xs text-gray-300 leading-normal">{comment.body}</p>
-                  </div>
-                ))}
+                  );
+                })}
                 
                 {activeIssue.comments.length === 0 && (
                   <div className="text-center py-6 text-dark-muted font-mono text-xs">
@@ -595,7 +719,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
             {/* RIGHT SIDEBAR: Properties Panel */}
             <div className="space-y-4">
               
-              {/* Quick status lock checks */}
+              {/* Quick status controls */}
               <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
                 <h3 className="text-xs font-bold text-dark-muted uppercase tracking-wider font-mono">Status & Controls</h3>
                 
@@ -632,6 +756,23 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                 </div>
               </div>
 
+              {/* Milestones Select Box */}
+              <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3">
+                <h3 className="text-xs font-bold text-dark-muted uppercase tracking-wider font-mono flex items-center gap-1">
+                  <Bookmark className="w-3.5 h-3.5 text-purple-400" /> Milestone
+                </h3>
+                <select
+                  value={activeIssue.milestone || ''}
+                  onChange={(e) => handleUpdateIssueMilestone(e.target.value)}
+                  className="w-full bg-[#05080f] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none cursor-pointer"
+                >
+                  <option value="">No Milestone</option>
+                  {AVAILABLE_MILESTONES.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Assignees panel */}
               <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3">
                 <h3 className="text-xs font-bold text-dark-muted uppercase tracking-wider font-mono flex items-center gap-1">
@@ -639,7 +780,6 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                 </h3>
                 
                 <div className="flex flex-col gap-2">
-                  {/* List active assignees */}
                   {activeIssue.assignees.map(user => (
                     <div key={user} className="flex items-center justify-between p-2 rounded bg-white/[0.01] border border-white/5 text-xs font-mono">
                       <div className="flex items-center gap-2">
@@ -701,7 +841,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                     )}
                   </div>
 
-                  {/* Add labels direct helper */}
+                  {/* Add labels input */}
                   <div className="pt-2 border-t border-white/5 flex gap-1.5">
                     <input
                       type="text"
@@ -763,7 +903,7 @@ export const IssuesPage: React.FC<IssuesProps> = ({
 
               {/* Priority filter */}
               <div className="flex items-center gap-1 bg-[#05080f] border border-white/5 px-3 py-1.5 rounded-xl flex-1 md:flex-initial">
-                <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                <Smile className="w-3.5 h-3.5 text-amber-400" />
                 <select
                   value={priorityFilter}
                   onChange={(e) => setPriorityFilter(e.target.value)}
@@ -824,12 +964,19 @@ export const IssuesPage: React.FC<IssuesProps> = ({
                           <span className={`px-1.5 py-0.2 rounded text-[8px] font-bold uppercase tracking-wider border font-mono ${getPriorityBadgeColor(issue.priority)}`}>
                             {issue.priority}
                           </span>
+
+                          {/* Milestone flag */}
+                          {issue.milestone && (
+                            <span className="px-1.5 py-0.2 bg-purple-500/5 border border-purple-500/10 text-[8px] font-mono font-bold text-purple-300 rounded uppercase">
+                              🗂️ {issue.milestone}
+                            </span>
+                          )}
                         </h4>
 
                         <div className="flex items-center gap-3.5 mt-1 text-[11px] text-dark-muted font-mono flex-wrap">
                           <span>by {issue.assignees.join(', ') || 'unassigned'} &bull; {new Date(issue.createdAt).toLocaleDateString()}</span>
                           
-                          {/* Labels preview list */}
+                          {/* Labels list */}
                           {issue.labels.length > 0 && (
                             <div className="flex items-center gap-1">
                               {issue.labels.map(l => (

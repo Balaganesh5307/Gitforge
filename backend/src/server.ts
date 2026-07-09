@@ -408,7 +408,7 @@ app.get('/api/repos/:repoId/issues/:issueId', (req, res) => {
 
 app.post('/api/repos/:repoId/issues', (req, res) => {
   const { repoId } = req.params;
-  const { title, description, priority, assignees, labels } = req.body;
+  const { title, description, priority, assignees, labels, milestone } = req.body;
 
   const issues = Store.getIssues(repoId);
   const issueId = `iss-${issues.length + 1}`;
@@ -423,6 +423,7 @@ app.post('/api/repos/:repoId/issues', (req, res) => {
     assignees: assignees || [],
     labels: labels || [],
     comments: [],
+    milestone: milestone || '',
     createdAt: new Date().toISOString()
   };
 
@@ -451,6 +452,7 @@ app.put('/api/repos/:repoId/issues/:issueId', (req, res) => {
   if (updateData.priority) issue.priority = updateData.priority;
   if (updateData.assignees) issue.assignees = updateData.assignees;
   if (updateData.labels) issue.labels = updateData.labels;
+  if (updateData.milestone !== undefined) issue.milestone = updateData.milestone;
 
   Store.saveIssue(issue);
   res.json(issue);
