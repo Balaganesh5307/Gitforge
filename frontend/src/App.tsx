@@ -23,7 +23,8 @@ import {
   Bot,
   Activity as ActivityIcon,
   Menu,
-  Bell
+  Bell,
+  GitCommit
 } from 'lucide-react';
 
 const REPO_ID = 'gitforge-demo';
@@ -32,6 +33,14 @@ function App() {
   const [currentPage, setCurrentPage] = useState<string>('landing');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [latency, setLatency] = useState(3);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLatency(Math.floor(Math.random() * 5) + 2);
+    }, 4500);
+    return () => clearInterval(interval);
+  }, []);
   
   // Repo States
   const [repo, setRepo] = useState<Repository | null>(null);
@@ -382,14 +391,43 @@ function App() {
                 <option key={b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
+
+            {/* Quick Counters Widget */}
+            <div className="hidden xl:flex items-center gap-3.5 border-l border-white/5 pl-4 ml-2 text-[11px] text-dark-muted font-mono select-none">
+              <span className="flex items-center gap-1" title="Total Commits">
+                <GitCommit className="w-3.5 h-3.5 text-purple-400" />
+                {commits.length}
+              </span>
+              <span className="flex items-center gap-1" title="Open Pull Requests">
+                <GitPullRequest className="w-3.5 h-3.5 text-emerald-400" />
+                {prs.filter(p => p.status === 'open').length}
+              </span>
+              <span className="flex items-center gap-1" title="Open Issues">
+                <AlertCircle className="w-3.5 h-3.5 text-indigo-400" />
+                {issues.filter(i => i.status !== 'done').length}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
             
-            {/* Quick Actions Feed indicator */}
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-dark-muted font-mono">
-              <ActivityIcon className="w-3.5 h-3.5" />
-              <span>Simulated Sandbox Environment</span>
+            {/* Sync Latency Indicator */}
+            <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-2.5 py-1 rounded-lg font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              <span>Synced: {latency}ms</span>
+            </div>
+
+            {/* Bot Avatar stack in header */}
+            <div className="hidden sm:flex items-center -space-x-1.5 mr-1 select-none">
+              {members.filter(m => m.role === 'bot').map(m => (
+                <img
+                  key={m.id}
+                  src={m.avatarUrl}
+                  alt={m.username}
+                  className="w-5.5 h-5.5 rounded-full border border-[#080d17] bg-slate-900 shadow-sm"
+                  title={`${m.username} (Bot Collaborator)`}
+                />
+              ))}
             </div>
 
             <button
