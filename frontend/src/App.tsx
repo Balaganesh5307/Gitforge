@@ -11,6 +11,7 @@ import { TerminalSimulator } from './components/TerminalSimulator';
 import { MergeConflictVisualizer } from './components/MergeConflictVisualizer';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
+import { RepositoryOverview } from './pages/RepositoryOverview';
 import {
   LayoutDashboard,
   GitBranch,
@@ -25,14 +26,22 @@ import {
   Activity as ActivityIcon,
   Menu,
   Bell,
-  GitCommit
+  GitCommit,
+  FolderOpen
 } from 'lucide-react';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<string>('landing');
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    return localStorage.getItem('currentPage') || 'landing';
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [latency, setLatency] = useState(3);
+
+  // Save page state to persist on reload
+  useEffect(() => {
+    localStorage.setItem('currentPage', currentPage);
+  }, [currentPage]);
   
   const [currentRepoId, setCurrentRepoId] = useState('gitforge-demo');
   const REPO_ID = currentRepoId;
@@ -385,6 +394,7 @@ function App() {
           <nav className="p-4 space-y-1">
             {[
               { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+              { id: 'repository', label: 'Repository Overview', icon: FolderOpen },
               { id: 'branches', label: 'Branches & Graph', icon: GitBranch },
               { id: 'prs', label: 'Pull Requests', icon: GitPullRequest, badge: prs.filter(p => p.status === 'open').length },
               { id: 'issues', label: 'Issue Tracker', icon: AlertCircle, badge: issues.filter(i => i.status !== 'done').length },
@@ -581,6 +591,23 @@ function App() {
               currentRepoId={currentRepoId}
               onSelectRepo={setCurrentRepoId}
               onTriggerBotAction={handleTriggerBotAction}
+              onSelectPage={setCurrentPage}
+            />
+          )}
+
+          {currentPage === 'repository' && (
+            <RepositoryOverview
+              repoId={REPO_ID}
+              repoName={repo?.name || 'GitForge-Simulator-Project'}
+              repoDesc={repo?.description || 'Interactive developer collaboration simulator repository.'}
+              commits={commits}
+              branches={branches}
+              currentBranchName={currentBranchName}
+              onCheckoutBranch={handleCheckoutBranch}
+              activities={activities}
+              members={members}
+              prs={prs}
+              issues={issues}
               onSelectPage={setCurrentPage}
             />
           )}
