@@ -31,10 +31,17 @@ import {
 } from 'lucide-react';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<string>('landing');
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    return localStorage.getItem('currentPage') || 'landing';
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [latency, setLatency] = useState(3);
+
+  // Save page state to persist on reload
+  useEffect(() => {
+    localStorage.setItem('currentPage', currentPage);
+  }, [currentPage]);
   
   const [currentRepoId, setCurrentRepoId] = useState('gitforge-demo');
   const REPO_ID = currentRepoId;
