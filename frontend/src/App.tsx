@@ -83,6 +83,7 @@ function App() {
   
   // Repo States
   const [repo, setRepo] = useState<Repository | null>(null);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [commits, setCommits] = useState<Commit[]>([]);
   const [prs, setPrs] = useState<PullRequest[]>([]);
@@ -115,6 +116,13 @@ function App() {
   // Fetch all repository data from backend
   const refreshAllData = async () => {
     try {
+      // 0. Fetch All Repositories
+      const reposRes = await fetch('http://localhost:5000/api/repos');
+      if (reposRes.ok) {
+        const reposData = await reposRes.json();
+        setRepositories(reposData);
+      }
+
       // 1. Fetch Repository Details
       const repoRes = await fetch(`http://localhost:5000/api/repos/${REPO_ID}`);
       if (repoRes.ok) {
@@ -568,6 +576,7 @@ function App() {
               issues={issues}
               activities={activities}
               members={members}
+              repositories={repositories}
               onTriggerBotAction={handleTriggerBotAction}
               onSelectPage={setCurrentPage}
             />

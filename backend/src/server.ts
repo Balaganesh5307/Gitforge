@@ -36,6 +36,14 @@ app.get('/api/repos/:repoId/members', (req, res) => {
 });
 
 // REPOS
+app.get('/api/repos', (req, res) => {
+  try {
+    res.json(Store.getRepositories());
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/repos/:repoId', (req, res) => {
   const { repoId } = req.params;
   const repo = Store.getRepository(repoId);
