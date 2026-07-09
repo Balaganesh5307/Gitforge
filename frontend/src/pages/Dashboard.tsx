@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Commit, Branch, PullRequest, Issue, Activity, Member } from '../types';
 import {
   GitCommit,
@@ -28,6 +28,8 @@ interface DashboardProps {
   activities: Activity[];
   members: Member[];
   repositories: any[];
+  currentRepoId: string;
+  onSelectRepo: (id: string) => void;
   onTriggerBotAction: (type: 'commit' | 'issue' | 'conflict') => void;
   onSelectPage: (page: string) => void;
 }
@@ -43,6 +45,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   activities,
   members,
   repositories,
+  currentRepoId,
+  onSelectRepo,
   onTriggerBotAction,
   onSelectPage
 }) => {
@@ -51,6 +55,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const openPrsCount = prs.filter(p => p.status === 'open').length;
   const closedPrsCount = prs.filter(p => p.status === 'merged' || p.status === 'closed').length;
   const openIssuesCount = issues.filter(i => i.status !== 'done').length;
+
+  // State for activity filtering
+  const [activityFilter, setActivityFilter] = useState<'all' | 'commit' | 'pr' | 'issue'>('all');
 
   // Calculate Repository Health %
   const repoHealth = useMemo(() => {
@@ -63,7 +70,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return Math.max(30, Math.min(100, health));
   }, [issues, prs]);
 
-  // Weekly commit activity data (last 7 days)
+  // Weekly commit activity data breakdown (last 7 days, you vs bots)
   const chartData = useMemo(() => {
     const dates = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
@@ -71,13 +78,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return d.toISOString().split('T')[0];
     }).reverse();
 
-    const commitCounts: Record<string, number> = {};
-    dates.forEach(d => { commitCounts[d] = 0; });
+    const userCommitCounts: Record<string, number> = {};
+    const botCommitCounts: Record<string, number> = {};
+    dates.forEach(d => {
+      userCommitCounts[d] = 0;
+      botCommitCounts[d] = 0;
+    });
 
     commits.forEach(c => {
       const commitDate = c.timestamp.split('T')[0];
-      if (commitDate in commitCounts) {
-        commitCounts[commitDate]++;
+      if (commitDate in userCommitCounts) {
+        if (c.author === 'you') {
+          userCommitCounts[commitDate]++;
+        } else {
+          botCommitCounts[commitDate]++;
+        }
       }
     });
 
@@ -85,12 +100,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const dayName = new Date(date).toLocaleDateString([], { weekday: 'short' });
       return {
         name: dayName,
-        commits: commitCounts[date]
+        you: userCommitCounts[date],
+        bots: botCommitCounts[date],
+        total: userCommitCounts[date] + botCommitCounts[date]
       };
     });
   }, [commits]);
 
-  // Heatmap data (Last 6 months)
+  // Filter activities feed based on active tab
+  const filteredActivities = useMemo(() => {
+    return activities.filter(act => {
+      if (activityFilter === 'all') return true;
+      if (activityFilter === 'commit') return act.type === 'commit';
+      if (activityFilter === 'pr') return act.type.startsWith('pr_');
+      if (activityFilter === 'issue') return act.type.startsWith('issue_');
+      return true;
+    });
+  }, [activities, activityFilter]);
+
+  // Heatmap data (Last 120 days)
   const heatmapData = useMemo(() => {
     const today = new Date();
     const cells: { dateStr: string; count: number; dayOfWeek: number }[] = [];
@@ -128,10 +156,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px]" />
 
         <div className="z-10 min-w-0 text-left">
-          <h1 className="text-xl md:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-200 to-blue-400">
-            {repoName}
-          </h1>
-          <p className="text-sm text-dark-muted mt-1 max-w-2xl truncate">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="text-[10px] font-black text-purple-400 font-mono tracking-wider uppercase">Active Repository:</span>
+            <select
+              value={currentRepoId}
+              onChange={(e) => onSelectRepo(e.target.value)}
+              className="bg-[#0b0f19] border border-white/10 rounded-lg px-2.5 py-1 text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 focus:outline-none focus:border-purple-500/40 cursor-pointer"
+            >
+              {repositories.map((r) => (
+                <option key={r.id} value={r.id} className="text-gray-200 bg-[#080d16] font-bold">
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-dark-muted mt-2 max-w-2xl leading-relaxed">
             {repoDesc}
           </p>
         </div>
@@ -265,15 +304,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <ActivityIcon className="w-4 h-4 text-indigo-400" />
               Weekly Activity
             </h3>
-            <span className="text-xs text-dark-muted font-mono">Last 7 Days</span>
+            <span className="text-xs text-dark-muted font-mono">Stacked: You vs Bots</span>
           </div>
 
           <div className="flex-grow min-h-0 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorCommits" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                  <linearGradient id="colorYou" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorBots" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
                     <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -284,7 +327,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   labelStyle={{ color: '#9ca3af', fontFamily: 'monospace' }}
                   itemStyle={{ color: '#a78bfa' }}
                 />
-                <Area type="monotone" dataKey="commits" stroke="#6366f1" strokeWidth={2.5} fillOpacity={1} fill="url(#colorCommits)" />
+                <Area type="monotone" stackId="1" dataKey="you" stroke="#8b5cf6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorYou)" name="You" />
+                <Area type="monotone" stackId="1" dataKey="bots" stroke="#6366f1" strokeWidth={2.5} fillOpacity={1} fill="url(#colorBots)" name="Bots" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -388,17 +432,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Bottom Layout (Activity Feed, Team List) */}
+      {/* Bottom Layout (Activity Feed, Diagnostics, Team List) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Activity Feed */}
-        <div className="md:col-span-2 glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
-          <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4">
-            Recent Event Activity Feed
-          </h3>
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider">
+              Activity Feed
+            </h3>
+            
+            {/* Feed Filters */}
+            <div className="flex gap-1.5">
+              {['all', 'commit', 'pr', 'issue'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActivityFilter(f as any)}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold capitalize transition-all ${
+                    activityFilter === f
+                      ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300'
+                      : 'bg-white/5 border border-white/5 text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex-grow overflow-y-auto pr-1 space-y-3">
-            {activities.slice(0, 15).map((act) => {
+            {filteredActivities.slice(0, 15).map((act) => {
               const formattedTime = new Date(act.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) + 
                 ' ' + new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
               
@@ -412,14 +475,53 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? 'bg-emerald-500'
                         : 'bg-indigo-400'
                     }`} />
-                    <span className="text-gray-300 font-mono">
+                    <span className="text-gray-300 font-mono text-[11px] text-left leading-normal">
                       <strong className="text-gray-200">{act.user === 'you' ? 'You' : act.user}</strong> {act.message}
                     </span>
                   </div>
-                  <span className="text-[10px] text-dark-muted font-mono flex-shrink-0 ml-4">{formattedTime}</span>
+                  <span className="text-[9px] text-dark-muted font-mono flex-shrink-0 ml-4">{formattedTime}</span>
                 </div>
               );
             })}
+            {filteredActivities.length === 0 && (
+              <div className="text-center text-xs text-dark-muted font-mono py-12">No activity matches this filter.</div>
+            )}
+          </div>
+        </div>
+
+        {/* System Diagnostics Panel */}
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
+          <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <Database className="w-4 h-4 text-indigo-400" />
+            Simulator Diagnostics
+          </h3>
+          <div className="flex-grow space-y-3 font-mono text-[10px] text-dark-muted flex flex-col justify-center">
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>DB Synchronization:</span>
+              <span className="text-emerald-400 font-bold">ONLINE (100% OK)</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Webhook Nodes:</span>
+              <span className="text-purple-400">4 Active</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Simulated CPU Load:</span>
+              <span className="text-gray-300">14%</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>In-Memory Size:</span>
+              <span className="text-gray-300">32.4 MB</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Bot Workers:</span>
+              <span className="text-indigo-400">3 Active</span>
+            </div>
+            <div className="pt-2 flex flex-col gap-1.5">
+              <span className="font-sans text-[9px] font-bold uppercase text-dark-muted tracking-wide">Workspace Health Index</span>
+              <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full" style={{ width: `${repoHealth}%` }} />
+              </div>
+            </div>
           </div>
         </div>
 

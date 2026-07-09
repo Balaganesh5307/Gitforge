@@ -28,13 +28,14 @@ import {
   GitCommit
 } from 'lucide-react';
 
-const REPO_ID = 'gitforge-demo';
-
 function App() {
   const [currentPage, setCurrentPage] = useState<string>('landing');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [latency, setLatency] = useState(3);
+  
+  const [currentRepoId, setCurrentRepoId] = useState('gitforge-demo');
+  const REPO_ID = currentRepoId;
   
   // Auth state
   const [user, setUser] = useState<any>(null);
@@ -182,7 +183,7 @@ function App() {
 
   useEffect(() => {
     refreshAllData();
-  }, []);
+  }, [currentRepoId]);
 
   // Handle Checkout Branch via GUI
   const handleCheckoutBranch = async (branchName: string) => {
@@ -577,6 +578,8 @@ function App() {
               activities={activities}
               members={members}
               repositories={repositories}
+              currentRepoId={currentRepoId}
+              onSelectRepo={setCurrentRepoId}
               onTriggerBotAction={handleTriggerBotAction}
               onSelectPage={setCurrentPage}
             />
