@@ -15,25 +15,41 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       <div className="absolute top-1/3 right-1/4 w-[600px] h-[600px] rounded-full bg-indigo-600/10 blur-[150px] pointer-events-none" />
       <div className="absolute bottom-0 left-1/3 w-[500px] h-[500px] rounded-full bg-blue-600/5 blur-[120px] pointer-events-none" />
 
-      {/* Navbar */}
-      <header className="sticky top-0 z-50 glass-panel border-b border-white/5 bg-[#080d17]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
-            <Bot className="w-5 h-5" />
+      {/* Floating Glass Navbar */}
+      <div className="max-w-6xl mx-auto px-6 pt-4 sticky top-0 z-50">
+        <header className="glass-panel border border-white/10 bg-[#080d17]/80 backdrop-blur-md px-6 py-3.5 rounded-2xl flex items-center justify-between shadow-2xl">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-sm font-extrabold tracking-tight text-white block leading-tight">GitForge</span>
+              <span className="text-[9px] text-purple-400 font-mono tracking-wider uppercase block">Collab Simulator</span>
+            </div>
           </div>
-          <div>
-            <span className="text-base font-extrabold tracking-tight text-white block">GitForge</span>
-            <span className="text-[9px] text-purple-400 font-mono tracking-wider uppercase -mt-1 block">Collab Simulator</span>
-          </div>
-        </div>
-        
-        <button
-          onClick={onLaunch}
-          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow hover:-translate-y-0.5 transition-all"
-        >
-          Launch Simulator
-        </button>
-      </header>
+          
+          {/* Middle Nav Links */}
+          <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-dark-muted font-mono">
+            <span className="text-gray-600">/</span>
+            <span className="hover:text-purple-400 cursor-pointer transition-colors">features</span>
+            <span className="text-gray-600">/</span>
+            <span className="hover:text-purple-400 cursor-pointer transition-colors">bot-network</span>
+            <span className="text-gray-600">/</span>
+            <span className="hover:text-purple-400 cursor-pointer transition-colors">sandbox</span>
+            <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              engine:online
+            </span>
+          </nav>
+          
+          <button
+            onClick={onLaunch}
+            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow hover:-translate-y-0.5 transition-all"
+          >
+            Launch Simulator
+          </button>
+        </header>
+      </div>
 
       {/* Hero Section */}
       <section className="max-w-6xl mx-auto px-6 pt-16 pb-20 text-center relative z-10 flex flex-col items-center">
