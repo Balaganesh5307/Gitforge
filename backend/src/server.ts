@@ -331,6 +331,19 @@ app.post('/api/repos/:repoId/pulls/:prId/reviews', (req, res) => {
   res.status(201).json(pr);
 });
 
+app.post('/api/repos/:repoId/pulls/:prId/close', (req, res) => {
+  const { repoId, prId } = req.params;
+  const { author } = req.body;
+
+  const pr = Store.getPullRequest(prId);
+  if (!pr) return res.status(404).json({ error: 'PR not found' });
+
+  pr.status = 'closed';
+  Store.savePullRequest(pr);
+  Store.createActivity(repoId, 'pr_close', `closed pull request #${prId.replace('pr-', '')}`, author || 'you');
+  res.json({ success: true, message: `PR closed`, status: 'closed' });
+});
+
 app.post('/api/repos/:repoId/pulls/:prId/merge', (req, res) => {
   const { repoId, prId } = req.params;
   const { author } = req.body;
