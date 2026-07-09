@@ -12,6 +12,7 @@ import { MergeConflictVisualizer } from './components/MergeConflictVisualizer';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
 import { RepositoryOverview } from './pages/RepositoryOverview';
+import { BranchesPage } from './pages/BranchesPage';
 import {
   LayoutDashboard,
   GitBranch,
@@ -103,9 +104,6 @@ function App() {
 
   // GUI Interaction States
   const [currentBranchName, setCurrentBranchName] = useState('main');
-  const [showCreateBranchModal, setShowCreateBranchModal] = useState(false);
-  const [newBranchName, setNewBranchName] = useState('');
-  const [sourceBranchName, setSourceBranchName] = useState('main');
 
   // Conflict Resolution Overlay State
   const [conflictOverlay, setConflictOverlay] = useState<{
@@ -206,58 +204,6 @@ function App() {
       if (response.ok) {
         setCurrentBranchName(branchName);
         showNotification(`Checked out branch: ${branchName}`, 'success');
-        refreshAllData();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Handle Create Branch via GUI
-  const handleCreateBranch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newBranchName.trim()) return;
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/repos/${REPO_ID}/branches`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceBranch: sourceBranchName,
-          newBranch: newBranchName.trim()
-        })
-      });
-
-      if (response.ok) {
-        showNotification(`Created branch: ${newBranchName}`, 'success');
-        setShowCreateBranchModal(false);
-        setNewBranchName('');
-        // Checkout new branch
-        await handleCheckoutBranch(newBranchName.trim());
-      } else {
-        const err = await response.json();
-        showNotification(err.error || 'Failed to create branch', 'error');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Handle Delete Branch via GUI
-  const handleDeleteBranch = async (branchName: string) => {
-    if (branchName === 'main') {
-      showNotification('Cannot delete default branch', 'error');
-      return;
-    }
-    if (!window.confirm(`Delete branch ${branchName} permanently?`)) return;
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/repos/${REPO_ID}/branches/${branchName}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        showNotification(`Deleted branch: ${branchName}`, 'info');
         refreshAllData();
       }
     } catch (err) {
@@ -659,163 +605,35 @@ function App() {
 
           {currentPage === 'branches' && (
             <div className="space-y-6">
+              <BranchesPage
+                repoId={REPO_ID}
+                branches={branches}
+                currentBranchName={currentBranchName}
+                commits={commits}
+                onCheckoutBranch={handleCheckoutBranch}
+                onRefreshData={refreshAllData}
+                showNotification={showNotification}
+              />
               
-              {/* Branch list controls */}
-              <div className="glass-panel p-5 rounded-2xl border border-white/5">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider">Branches Management</h3>
-                    <p className="text-[11px] text-dark-muted font-mono mt-0.5">Toggle default tracks and delete outdated sub-branches.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSourceBranchName(currentBranchName);
-                      setShowCreateBranchModal(true);
-                    }}
-                    className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    New Branch
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                  {branches.map(b => (
-                    <div
-                      key={b.name}
-                      className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
-                        b.name === currentBranchName
-                          ? 'bg-purple-500/10 border-purple-500/35 text-purple-300'
-                          : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.04]'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold font-mono truncate flex items-center gap-1.5">
-                          <GitBranch className="w-3.5 h-3.5 flex-shrink-0" />
-                          {b.name}
-                        </h4>
-                        <span className="text-[9px] text-dark-muted font-mono block mt-1">HEAD: {b.headCommitHash.substring(0, 8)}</span>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {b.name !== currentBranchName && (
-                          <button
-                            onClick={() => handleCheckoutBranch(b.name)}
-                            className="px-2 py-1 bg-white/5 hover:bg-white/10 text-gray-300 text-[10px] font-semibold rounded border border-white/10"
-                          >
-                            Checkout
-                          </button>
-                        )}
-                        {!b.isDefault && (
-                          <button
-                            onClick={() => handleDeleteBranch(b.name)}
-                            className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/10 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Graphical representation */}
-              <div className="glass-panel p-5 rounded-2xl border border-white/5">
-                <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                  <GitBranch className="w-4 h-4 text-purple-400" />
-                  Interactive Branch Graph Visualizer
-                </h3>
-                <BranchGraph
-                  commits={commits}
-                  branches={branches}
-                  currentBranch={currentBranchName}
-                  onCommitSelect={(commit) => {
-                    alert(`Commit Summary:\n\nHash: ${commit.hash}\nAuthor: ${commit.author}\nMessage: ${commit.message}\nTime: ${new Date(commit.timestamp).toLocaleString()}\nBranch: ${commit.branchName}\nFiles: ${commit.filesChanged.map(f => f.filename).join(', ')}`);
-                  }}
-                />
-              </div>
-
               {/* Terminal Simulator Console */}
               <div>
-                <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-3.5">
+                <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-3.5 text-left">
                   Git Simulation Command Line Terminal
                 </h3>
                 <TerminalSimulator
                   repoId={REPO_ID}
                   currentBranch={currentBranchName}
                   onCommandExecuted={(output, status, newBranch) => {
-                    // Update active checkout branch automatically if checking out
                     setCurrentBranchName(newBranch);
-                    // Refresh data to reflect state modifications in the visual graph
                     refreshAllData();
                   }}
                 />
               </div>
-
             </div>
           )}
 
         </div>
       </main>
-
-      {/* CREATE BRANCH POPUP MODAL */}
-      {showCreateBranchModal && (
-        <div className="fixed inset-0 z-50 bg-[#06080e]/90 flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-panel rounded-2xl border border-white/10 p-6 shadow-2xl space-y-4">
-            <div>
-              <h3 className="text-md font-bold text-gray-200">Create New Branch</h3>
-              <p className="text-xs text-dark-muted mt-0.5">Specify name and starting checkpoint hash point.</p>
-            </div>
-            
-            <form onSubmit={handleCreateBranch} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
-                  Source Branch Base
-                </label>
-                <select
-                  value={sourceBranchName}
-                  onChange={(e) => setSourceBranchName(e.target.value)}
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none"
-                >
-                  {branches.map(b => (
-                    <option key={b.name} value={b.name}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
-                  New Branch Name
-                </label>
-                <input
-                  type="text"
-                  value={newBranchName}
-                  onChange={(e) => setNewBranchName(e.target.value)}
-                  placeholder="e.g. feature/api-routes"
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateBranchModal(false)}
-                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold shadow-glow"
-                >
-                  Create Branch
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* FULL SCREEN MERGE CONFLICT RESOLUTION OVERLAY */}
       {conflictOverlay && (

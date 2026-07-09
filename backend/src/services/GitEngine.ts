@@ -178,6 +178,68 @@ class GitEngineService {
   }
 
   /**
+   * Perform dry-run validation check of merging two branches
+   */
+  public checkMergeStatus(repoId: string, sourceBranchName: string, targetBranchName: string): any {
+    const sourceBranch = Store.getBranch(repoId, sourceBranchName);
+    const targetBranch = Store.getBranch(repoId, targetBranchName);
+
+    if (!sourceBranch || !targetBranch) {
+      throw new Error('Invalid source or target branch');
+    }
+
+    const sourceHead = sourceBranch.headCommitHash;
+    const targetHead = targetBranch.headCommitHash;
+
+    if (sourceHead === targetHead) {
+      return { status: 'up_to_date' };
+    }
+
+    const lca = this.findLCA(repoId, sourceHead, targetHead);
+    if (!lca) {
+      return { status: 'up_to_date', message: 'No common ancestor' };
+    }
+
+    if (lca === sourceHead) {
+      return { status: 'up_to_date' };
+    }
+
+    if (lca === targetHead) {
+      return { status: 'clean', description: 'Fast-forward merge possible' };
+    }
+
+    const sourceFiles = this.getFileSnapshotAtCommit(repoId, sourceHead);
+    const targetFiles = this.getFileSnapshotAtCommit(repoId, targetHead);
+    const lcaFiles = this.getFileSnapshotAtCommit(repoId, lca);
+
+    const conflictingFiles: string[] = [];
+    const allFiles = new Set<string>([
+      ...sourceFiles.keys(),
+      ...targetFiles.keys(),
+      ...lcaFiles.keys()
+    ]);
+
+    for (const file of allFiles) {
+      const lcaContent = lcaFiles.get(file) || '';
+      const sourceContent = sourceFiles.get(file) || '';
+      const targetContent = targetFiles.get(file) || '';
+
+      const sourceChanged = sourceContent !== lcaContent;
+      const targetChanged = targetContent !== lcaContent;
+
+      if (sourceChanged && targetChanged && sourceContent !== targetContent) {
+        conflictingFiles.push(file);
+      }
+    }
+
+    if (conflictingFiles.length > 0) {
+      return { status: 'conflict', conflictingFiles };
+    }
+
+    return { status: 'clean', description: 'Clean three-way merge possible' };
+  }
+
+  /**
    * Merge source branch into target branch
    */
   public merge(repoId: string, sourceBranchName: string, targetBranchName: string, author: string): MergeResult {

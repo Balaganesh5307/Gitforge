@@ -108,6 +108,65 @@ app.delete('/api/repos/:repoId/branches/:branchName', (req, res) => {
   res.json({ success: true, message: `Branch ${branchName} deleted` });
 });
 
+app.put('/api/repos/:repoId/branches/:branchName', (req, res) => {
+  const { repoId, branchName } = req.params;
+  const { newName } = req.body;
+
+  if (!newName) {
+    return res.status(400).json({ error: 'newName is required' });
+  }
+
+  const branch = Store.getBranch(repoId, branchName);
+  if (!branch) {
+    return res.status(404).json({ error: 'Branch not found' });
+  }
+
+  if (branch.isDefault) {
+    return res.status(400).json({ error: 'Cannot rename default branch' });
+  }
+
+  const existing = Store.getBranch(repoId, newName);
+  if (existing) {
+    return res.status(400).json({ error: `Branch ${newName} already exists` });
+  }
+
+  const repo = Store.getRepository(repoId);
+  if (repo && repo.currentBranch === branchName) {
+    repo.currentBranch = newName;
+  }
+
+  branch.name = newName;
+  Store.save();
+
+  Store.createActivity(repoId, 'branch_rename', `renamed branch ${branchName} to ${newName}`, 'you');
+  res.json({ success: true, message: `Branch renamed to ${newName}` });
+});
+
+app.get('/api/repos/:repoId/compare', (req, res) => {
+  const { repoId } = req.params;
+  const { source, target } = req.query;
+
+  if (!source || !target) {
+    return res.status(400).json({ error: 'source and target parameters are required' });
+  }
+
+  try {
+    const status = GitEngine.checkMergeStatus(repoId, source as string, target as string);
+    const sourceCommits = Store.getCommitsForBranch(repoId, source as string);
+    const targetCommits = Store.getCommitsForBranch(repoId, target as string);
+    
+    const targetHashes = new Set(targetCommits.map(c => c.hash));
+    const uniqueCommits = sourceCommits.filter(c => !targetHashes.has(c.hash));
+
+    res.json({
+      mergeStatus: status,
+      commits: uniqueCommits
+    });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // COMMITS
 app.get('/api/repos/:repoId/commits', (req, res) => {
   const { repoId } = req.params;
