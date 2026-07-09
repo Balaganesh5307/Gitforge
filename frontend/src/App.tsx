@@ -9,6 +9,7 @@ import { ReleasesPage } from './pages/Releases';
 import { BranchGraph } from './components/BranchGraph';
 import { TerminalSimulator } from './components/TerminalSimulator';
 import { MergeConflictVisualizer } from './components/MergeConflictVisualizer';
+import { LandingPage } from './pages/LandingPage';
 import {
   LayoutDashboard,
   GitBranch,
@@ -26,7 +27,7 @@ import {
 const REPO_ID = 'gitforge-demo';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [currentPage, setCurrentPage] = useState<string>('landing');
   
   // Repo States
   const [repo, setRepo] = useState<Repository | null>(null);
@@ -255,6 +256,10 @@ function App() {
       console.error(err);
     }
   };
+
+  if (currentPage === 'landing') {
+    return <LandingPage onLaunch={() => setCurrentPage('dashboard')} />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#060a12] text-gray-100 select-none">
