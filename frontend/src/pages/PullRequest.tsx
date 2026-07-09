@@ -14,7 +14,12 @@ import {
   X,
   FileCode2,
   ShieldCheck,
-  Check
+  Check,
+  Play,
+  RotateCw,
+  Tag,
+  User,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -30,6 +35,14 @@ interface PullRequestProps {
     prId: string;
   }) => void;
 }
+
+// Available labels
+const AVAILABLE_LABELS = [
+  { name: 'bug', color: 'bg-red-500/10 border-red-500/30 text-red-400' },
+  { name: 'enhancement', color: 'bg-blue-500/10 border-blue-500/30 text-blue-400' },
+  { name: 'documentation', color: 'bg-amber-500/10 border-amber-500/30 text-amber-400' },
+  { name: 'refactor', color: 'bg-purple-500/10 border-purple-500/30 text-purple-400' }
+];
 
 export const PullRequestPage: React.FC<PullRequestProps> = ({
   repoId,
@@ -53,7 +66,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
   const [commentText, setCommentText] = useState('');
   
   // Inline comment state
-  const [activeInlineCommentKey, setActiveInlineCommentKey] = useState<string | null>(null); // e.g. "filename:line"
+  const [activeInlineCommentKey, setActiveInlineCommentKey] = useState<string | null>(null);
   const [inlineCommentText, setInlineCommentText] = useState('');
 
   // Submit Review state
@@ -61,9 +74,15 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
   const [reviewStatus, setReviewStatus] = useState<'approved' | 'changes_requested' | 'comment'>('approved');
   const [reviewBody, setReviewBody] = useState('');
 
+  // Labels selection simulation
+  const [selectedLabels, setSelectedLabels] = useState<string[]>(['enhancement']);
+
   // PR Commits & Diff states
   const [prCommits, setPrCommits] = useState<Commit[]>([]);
   const [loadingPrDetails, setLoadingPrDetails] = useState(false);
+
+  // Time state for CI check loader simulation
+  const [timeSinceCreation, setTimeSinceCreation] = useState(0);
 
   // Fetch PRs list
   const fetchPRs = async () => {
@@ -83,6 +102,18 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
   }, [repoId]);
 
   const activePR = prs.find(p => p.id === activePrId);
+
+  // Simulated CI Check interval tick
+  useEffect(() => {
+    if (!activePR) return;
+    
+    const interval = setInterval(() => {
+      const diffSeconds = Math.floor((Date.now() - new Date(activePR.createdAt).getTime()) / 1000);
+      setTimeSinceCreation(diffSeconds);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activePR]);
 
   // Fetch commits and files when PR becomes active
   useEffect(() => {
@@ -163,7 +194,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     }
   };
 
-  // Add Comment (General or Inline)
+  // Add Comment
   const handleAddComment = async (e: React.FormEvent, filename?: string, line?: number) => {
     e.preventDefault();
     const text = filename ? inlineCommentText : commentText;
@@ -260,6 +291,40 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
       });
       if (response.ok) {
         await fetchPRs();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Toggle labels simulation helper
+  const handleLabelToggle = (labelName: string) => {
+    setSelectedLabels(prev => 
+      prev.includes(labelName) 
+        ? prev.filter(l => l !== labelName) 
+        : [...prev, labelName]
+    );
+  };
+
+  // Resolve conflict trigger helper
+  const handleResolveConflictsClick = async () => {
+    if (!activePrId || !activePR) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/pulls/${activePrId}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: 'you' })
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'conflict') {
+          onTriggerConflictVisualizer({
+            sourceBranch: activePR.sourceBranch,
+            targetBranch: activePR.targetBranch,
+            conflictingFiles: result.conflictingFiles,
+            prId: activePrId
+          });
+        }
       }
     } catch (err) {
       console.error(err);
@@ -442,7 +507,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                   
                   <button
                     onClick={handleTriggerBotReview}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-all"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-all animate-none"
                   >
                     Request Bot Review
                   </button>
@@ -475,7 +540,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 top-10 w-72 glass-panel premium-navbar rounded-xl border border-white/10 p-4 shadow-2xl z-40 bg-[#090d16]"
+                        className="absolute right-0 top-10 w-72 glass-panel premium-navbar rounded-xl border border-white/10 p-4 shadow-2xl z-45 bg-[#090d16]"
                       >
                         <div className="flex justify-between items-center pb-2 border-b border-white/5 mb-3">
                           <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest font-mono">Code Review Board</span>
@@ -676,11 +741,34 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                   </form>
                 </div>
 
-                {/* Right Side Checklists */}
+                {/* Right Side Checklists & Sidebar Panels */}
                 <div className="space-y-4">
+                  
+                  {/* PR Health & Conflict details */}
                   <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
                     <h3 className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Merge Checklist</h3>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
+                      
+                      {/* Automated CI Build check */}
+                      <div className="flex items-start gap-2.5 text-xs">
+                        <span className="mt-0.5">
+                          {timeSinceCreation < 15 ? (
+                            <RotateCw className="w-4 h-4 text-amber-400 animate-spin" />
+                          ) : (
+                            <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[9px]">✓</div>
+                          )}
+                        </span>
+                        <div>
+                          <h4 className="font-semibold text-gray-200">Simulated CI Build Actions</h4>
+                          <p className="text-[11px] text-dark-muted mt-0.5">
+                            {timeSinceCreation < 15 
+                              ? 'Running unit-tests & code linter configurations (1 pending)...'
+                              : 'All build checks succeeded. Passed in 14 seconds.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Conflict check */}
                       <div className="flex items-start gap-2.5 text-xs">
                         <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold font-mono text-[9px] mt-0.5 ${
                           hasConflictComment ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
@@ -689,14 +777,23 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                         </span>
                         <div>
                           <h4 className="font-semibold text-gray-200">Conflict Marker Verification</h4>
-                          <p className="text-[11px] text-dark-muted mt-0.5">
+                          <p className="text-[11px] text-dark-muted mt-0.5 leading-relaxed">
                             {hasConflictComment 
-                              ? 'Overlap changes flagged. Attempting merge will open Conflict resolver.' 
+                              ? 'Merge overlaps flagged on target branches.' 
                               : 'No automatic conflicts detected. Branch is merge ready.'}
                           </p>
+                          {hasConflictComment && (
+                            <button
+                              onClick={handleResolveConflictsClick}
+                              className="mt-2 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-bold font-mono transition-all"
+                            >
+                              Resolve Conflicts Inline
+                            </button>
+                          )}
                         </div>
                       </div>
 
+                      {/* Bot Review checks */}
                       <div className="flex items-start gap-2.5 text-xs">
                         <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold font-mono text-[9px] mt-0.5 ${
                           activePR.reviews.some(r => r.status === 'changes_requested')
@@ -718,8 +815,46 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                           </p>
                         </div>
                       </div>
+
                     </div>
                   </div>
+
+                  {/* Labels list selection panel */}
+                  <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3">
+                    <h3 className="text-xs font-semibold text-dark-muted uppercase tracking-wider flex items-center gap-1">
+                      <Tag className="w-3.5 h-3.5" /> Pull Request Labels
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {AVAILABLE_LABELS.map(lbl => {
+                        const isSelected = selectedLabels.includes(lbl.name);
+                        return (
+                          <span
+                            key={lbl.name}
+                            onClick={() => handleLabelToggle(lbl.name)}
+                            className={`px-2 py-0.5 rounded-full border text-[9px] font-semibold cursor-pointer transition-all ${
+                              isSelected 
+                                ? lbl.color + ' border-purple-500' 
+                                : 'bg-white/5 border-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-400'
+                            }`}
+                          >
+                            {lbl.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Assignees panel */}
+                  <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3">
+                    <h3 className="text-xs font-semibold text-dark-muted uppercase tracking-wider flex items-center gap-1">
+                      <User className="w-3.5 h-3.5" /> Assignees
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                      <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=you" className="w-5.5 h-5.5 rounded-full bg-slate-900 border border-white/10" alt="you" />
+                      <span className="text-gray-300 font-bold">you (Owner)</span>
+                    </div>
+                  </div>
+
                 </div>
 
               </div>
@@ -759,8 +894,6 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                 ) : (
                   filesChangedList.map((file: any) => {
                     const lines = file.content.split('\n');
-                    
-                    // Filter inline comments for this specific file
                     const fileComments = activePR.comments.filter(c => c.filename === file.filename);
 
                     return (
@@ -776,29 +909,24 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                           </span>
                         </div>
 
-                        {/* Code Lines with Hover Comments */}
+                        {/* Code Lines */}
                         <div className="bg-[#05070c]/90 overflow-x-auto font-mono text-sm leading-relaxed p-4 select-text">
                           <div className="space-y-0.5 min-w-[500px]">
                             {lines.map((line: string, idx: number) => {
                               const lineNumber = idx + 1;
                               const isAddition = line.includes('import') || line.includes('export') || line.includes('const') || line.trim().startsWith('//');
                               
-                              // Retrieve inline comments for this specific line
                               const lineComments = fileComments.filter(c => c.line === lineNumber);
-                              
                               const commentKey = `${file.filename}:${lineNumber}`;
                               const isCommentInputOpen = activeInlineCommentKey === commentKey;
 
                               return (
                                 <div key={idx} className="flex flex-col border-b border-white/[0.01]">
                                   
-                                  {/* Code line body */}
                                   <div className="flex group hover:bg-white/5 px-2.5 py-0.5 rounded transition-all items-center relative">
-                                    {/* Line Number */}
                                     <span className="text-dark-muted text-xs pr-4 border-r border-white/5 w-8 select-none text-left relative flex items-center justify-between">
                                       {lineNumber}
                                       
-                                      {/* Hover add inline comment button */}
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -812,14 +940,14 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                                       </button>
                                     </span>
                                     
-                                    <pre className={`pl-4 flex-grow text-xs ${
+                                    <pre className={`pl-4 flex-grow text-xs text-left ${
                                       isAddition ? 'text-emerald-400 bg-emerald-500/5' : 'text-gray-300'
                                     }`}>
                                       {line || ' '}
                                     </pre>
                                   </div>
 
-                                  {/* Existing Inline Comments rendered inside code diff */}
+                                  {/* Inline Comments */}
                                   {lineComments.length > 0 && (
                                     <div className="pl-12 pr-6 py-2 bg-purple-500/[0.01] border-l-2 border-purple-500 space-y-2 select-text text-left">
                                       {lineComments.map((comment) => (
@@ -834,7 +962,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                                     </div>
                                   )}
 
-                                  {/* Inline Comment Input Box */}
+                                  {/* Comment Input */}
                                   {isCommentInputOpen && (
                                     <div className="pl-12 pr-6 py-3 border-l-2 border-indigo-500 bg-indigo-500/[0.01]">
                                       <form
