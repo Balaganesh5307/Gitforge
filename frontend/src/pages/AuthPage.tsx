@@ -45,6 +45,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, initialView =
     setTimeout(() => setSuccessMessage(null), 6000);
   };
 
+  const handleQuickFill = (emailVal: string, passVal: string) => {
+    setEmail(emailVal);
+    setPassword(passVal);
+    triggerSuccess('Demo credentials auto-filled. Click Sign In!');
+  };
+
   // Submit Sign In
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -355,6 +361,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, initialView =
                   >
                     Create Account
                   </span>
+                </div>
+
+                {/* Demo Credentials Quick-Select */}
+                <div className="mt-6 pt-5 border-t border-white/5 text-center">
+                  <span className="text-[9px] font-bold text-dark-muted uppercase font-mono tracking-widest block mb-2.5">
+                    Demo Credentials (Click to Autofill)
+                  </span>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('user@gitforge.com', 'password123')}
+                      className="w-full py-2 bg-purple-500/5 hover:bg-purple-500/10 border border-purple-500/10 rounded-xl text-[10px] font-mono font-semibold flex items-center justify-between px-3.5 transition-all hover:scale-[1.01]"
+                    >
+                      <span className="text-purple-300">user@gitforge.com</span>
+                      <span className="text-gray-500">password123</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('admin@gitforge.com', 'admin123')}
+                      className="w-full py-2 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/10 rounded-xl text-[10px] font-mono font-semibold flex items-center justify-between px-3.5 transition-all hover:scale-[1.01]"
+                    >
+                      <span className="text-indigo-300">admin@gitforge.com</span>
+                      <span className="text-gray-500">admin123</span>
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}

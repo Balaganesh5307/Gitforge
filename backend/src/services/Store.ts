@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DbData, Member, Repository, Branch, Commit, PullRequest, Issue, Activity, User } from '../models/types';
+import { hashPassword } from './Hash';
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -325,6 +326,25 @@ const DEFAULT_ACTIVITIES: Activity[] = [
   { id: 'act-9', repoId: 'gitforge-demo', type: 'pr_review', message: 'approved pull request #2', user: 'bob-reviewer', createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() }
 ];
 
+const DEFAULT_USERS: User[] = [
+  {
+    id: 'usr-user',
+    username: 'user_developer',
+    email: 'user@gitforge.com',
+    passwordHash: hashPassword('password123'),
+    isVerified: true,
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'usr-admin',
+    username: 'admin_developer',
+    email: 'admin@gitforge.com',
+    passwordHash: hashPassword('admin123'),
+    isVerified: true,
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  }
+];
+
 class StoreService {
   private data: DbData;
 
@@ -351,8 +371,8 @@ class StoreService {
       if (fs.existsSync(DB_FILE)) {
         const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(fileContent);
-        if (!this.data.users) {
-          this.data.users = [];
+        if (!this.data.users || this.data.users.length === 0) {
+          this.data.users = DEFAULT_USERS;
         }
       } else {
         // Pre-populate database
@@ -364,7 +384,7 @@ class StoreService {
           pullRequests: DEFAULT_PRS,
           issues: DEFAULT_ISSUES,
           activities: DEFAULT_ACTIVITIES,
-          users: []
+          users: DEFAULT_USERS
         };
         this.save();
       }
@@ -379,7 +399,7 @@ class StoreService {
         pullRequests: DEFAULT_PRS,
         issues: DEFAULT_ISSUES,
         activities: DEFAULT_ACTIVITIES,
-        users: []
+        users: DEFAULT_USERS
       };
     }
   }
