@@ -173,6 +173,70 @@ app.get('/api/repos/:repoId/commits', (req, res) => {
   res.json(Store.getCommits(repoId));
 });
 
+app.post('/api/repos/:repoId/commits/cherry-pick', (req, res) => {
+  const { repoId } = req.params;
+  const { commitHash, branchName } = req.body;
+
+  if (!commitHash || !branchName) {
+    return res.status(400).json({ error: 'commitHash and branchName are required' });
+  }
+
+  const commits = Store.getCommits(repoId);
+  const originalCommit = commits.find(c => c.hash === commitHash);
+  if (!originalCommit) {
+    return res.status(404).json({ error: 'Commit not found' });
+  }
+
+  try {
+    const newCommit = GitEngine.commit(
+      repoId,
+      branchName,
+      `cherry-pick: ${originalCommit.message}`,
+      'you',
+      originalCommit.filesChanged
+    );
+    res.status(201).json(newCommit);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/repos/:repoId/commits/revert', (req, res) => {
+  const { repoId } = req.params;
+  const { commitHash, branchName } = req.body;
+
+  if (!commitHash || !branchName) {
+    return res.status(400).json({ error: 'commitHash and branchName are required' });
+  }
+
+  const commits = Store.getCommits(repoId);
+  const originalCommit = commits.find(c => c.hash === commitHash);
+  if (!originalCommit) {
+    return res.status(404).json({ error: 'Commit not found' });
+  }
+
+  try {
+    const invertedFiles = originalCommit.filesChanged.map(f => ({
+      filename: f.filename,
+      status: f.status === 'added' ? 'deleted' as const : f.status === 'deleted' ? 'added' as const : 'modified' as const,
+      content: f.content || '',
+      additions: f.deletions,
+      deletions: f.additions
+    }));
+
+    const newCommit = GitEngine.commit(
+      repoId,
+      branchName,
+      `revert: ${originalCommit.message}`,
+      'you',
+      invertedFiles
+    );
+    res.status(201).json(newCommit);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.get('/api/repos/:repoId/commits/branch/:branchName', (req, res) => {
   const { repoId, branchName } = req.params;
   res.json(Store.getCommitsForBranch(repoId, branchName));

@@ -4,7 +4,6 @@ import {
   GitCommit, 
   Search, 
   User as UserIcon, 
-  Calendar, 
   FileText, 
   Check, 
   Copy, 
@@ -14,25 +13,35 @@ import {
   Plus, 
   Minus,
   FileCode,
-  ArrowRight
+  Sparkles,
+  RefreshCw,
+  Users,
+  Layers,
+  Undo2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BranchGraph } from '../components/BranchGraph';
 
 interface CommitsPageProps {
+  repoId: string;
   commits: Commit[];
   branches: Branch[];
   currentBranchName: string;
   members: Member[];
   onSelectPage: (page: string) => void;
+  onRefreshData: () => void;
+  showNotification: (text: string, type: 'success' | 'info' | 'error') => void;
 }
 
 export const CommitsPage: React.FC<CommitsPageProps> = ({
+  repoId,
   commits,
   branches,
   currentBranchName,
   members,
-  onSelectPage
+  onSelectPage,
+  onRefreshData,
+  showNotification
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBranch, setSelectedBranch] = useState(currentBranchName);
@@ -41,6 +50,9 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
   
   // Selected commit for the detail modal
   const [activeCommit, setActiveCommit] = useState<Commit | null>(null);
+
+  // loading spinner states for cherry-pick/revert actions
+  const [actionLoading, setActionLoading] = useState(false);
 
   const handleCopyHash = (hash: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -75,7 +87,7 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
     return result;
   }, [commits, branches, selectedBranch]);
 
-  // 2. Apply author and text query filtering
+  // 2. Apply author and query searches
   const filteredCommits = useMemo(() => {
     return branchCommits.filter(c => {
       const matchesSearch = c.message.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -87,7 +99,7 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
     });
   }, [branchCommits, searchQuery, selectedAuthor]);
 
-  // 3. Group commits by date for standard GitHub display
+  // 3. Group commits by date for timeline headers
   const groupedCommits = useMemo(() => {
     const groups: Record<string, Commit[]> = {};
     filteredCommits.forEach(c => {
@@ -105,6 +117,74 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
     return groups;
   }, [filteredCommits]);
 
+  // Pre-calculate statistics
+  const uniqueAuthorsCount = useMemo(() => {
+    const authors = new Set(filteredCommits.map(c => c.author));
+    return authors.size;
+  }, [filteredCommits]);
+
+  const totalModifications = useMemo(() => {
+    let mods = 0;
+    filteredCommits.forEach(c => {
+      c.filesChanged.forEach(f => {
+        mods += (f.additions || 0) + (f.deletions || 0);
+      });
+    });
+    return mods;
+  }, [filteredCommits]);
+
+  // Trigger Cherry-Pick Action
+  const handleCherryPick = async (commitHash: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setActionLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/commits/cherry-pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitHash, branchName: currentBranchName })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        showNotification(`Commit cherry-picked successfully onto "${currentBranchName}"!`, 'success');
+        setSelectedBranch(currentBranchName);
+        setActiveCommit(null);
+        onRefreshData();
+      } else {
+        showNotification(data.error || 'Cherry-pick failed', 'error');
+      }
+    } catch (err) {
+      showNotification('Network connection failed', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Trigger Revert Action
+  const handleRevertCommit = async (commitHash: string) => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/commits/revert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitHash, branchName: currentBranchName })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        showNotification('Revert completed! Inverted commits pushed to track.', 'success');
+        setActiveCommit(null);
+        onRefreshData();
+      } else {
+        showNotification(data.error || 'Revert failed', 'error');
+      }
+    } catch (err) {
+      showNotification('Network connection failed', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Resolve author avatar helper
   const getAuthorAvatar = (authorName: string) => {
     const member = members.find(m => m.username === authorName || (authorName === 'you' && m.id === 'you'));
@@ -114,6 +194,39 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
   return (
     <div className="space-y-6">
       
+      {/* Visual Analytics Widgets */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-dark-muted uppercase font-mono tracking-wider block">Timeline Commits</span>
+            <h3 className="text-2xl font-black text-gray-200 mt-1">{filteredCommits.length}</h3>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-dark-muted uppercase font-mono tracking-wider block">Unique Authors</span>
+            <h3 className="text-2xl font-black text-gray-200 mt-1">{uniqueAuthorsCount}</h3>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <Users className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-dark-muted uppercase font-mono tracking-wider block">Code Modifications</span>
+            <h3 className="text-2xl font-black text-emerald-400 mt-1">+{totalModifications} lines</h3>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <Plus className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
       {/* Search and Filters Bar */}
       <div className="glass-panel p-4 rounded-2xl border border-white/5 flex flex-col md:flex-row gap-4 items-center justify-between text-left">
         
@@ -162,7 +275,7 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
 
       </div>
 
-      {/* Grid: Graph on top, list below or split */}
+      {/* Grid Layout: Timeline (Left) & Commit graph (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
         
         {/* Left Side: Timeline (2 cols) */}
@@ -193,6 +306,8 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
                   <div className="space-y-3">
                     {commitList.map(commit => {
                       const avatar = getAuthorAvatar(commit.author);
+                      const isNotOnActiveBranch = selectedBranch !== currentBranchName;
+                      
                       return (
                         <motion.div
                           key={commit.hash}
@@ -218,6 +333,19 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
                           </div>
 
                           <div className="flex items-center gap-2 flex-shrink-0 font-mono text-[10px] select-none">
+                            {/* Cherry pick button if commit is from another branch */}
+                            {isNotOnActiveBranch && (
+                              <button
+                                onClick={(e) => handleCherryPick(commit.hash, e)}
+                                disabled={actionLoading}
+                                className="px-2.5 py-1.5 bg-purple-600/10 border border-purple-500/20 hover:bg-purple-600 hover:text-white rounded-lg text-purple-300 text-[10px] font-bold flex items-center gap-1 transition-all"
+                                title={`Cherry-pick this commit onto ${currentBranchName}`}
+                              >
+                                <Sparkles className="w-3 h-3 animate-pulse" />
+                                <span className="hidden sm:inline">Cherry-Pick</span>
+                              </button>
+                            )}
+
                             <span className="hidden sm:inline-flex items-center gap-1 text-dark-muted bg-white/5 px-2 py-0.5 rounded border border-white/5">
                               <FileText className="w-3 h-3" /> {commit.filesChanged.length} files
                             </span>
@@ -251,10 +379,9 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
 
         </div>
 
-        {/* Right Side: Graph view & details */}
+        {/* Right Side: Graph connection */}
         <div className="space-y-6">
           
-          {/* Commit graph */}
           <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
             <h3 className="text-xs font-bold text-gray-200 uppercase tracking-widest font-mono flex items-center gap-1.5">
               <GitBranch className="w-4 h-4 text-purple-400" />
@@ -351,7 +478,6 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
                     {activeCommit.filesChanged.map((file, idx) => (
                       <div key={idx} className="rounded-xl border border-white/5 overflow-hidden">
                         
-                        {/* File header banner */}
                         <div className="bg-[#080d16]/80 px-3.5 py-2 flex items-center justify-between text-[10px] font-mono text-dark-muted border-b border-white/5">
                           <span className="flex items-center gap-1.5 font-bold text-gray-200">
                             <FileCode className="w-3.5 h-3.5 text-indigo-400" />
@@ -362,7 +488,6 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
                           </span>
                         </div>
 
-                        {/* Visual mockup code diff changes */}
                         <div className="bg-[#05080f] p-3 font-mono text-[9px] text-gray-400 leading-relaxed overflow-x-auto whitespace-pre space-y-0.5 text-left select-none">
                           <div className="text-dark-muted font-bold pb-1">// Diff preview generated in simulator</div>
                           <div className="flex items-center text-red-400/80 bg-red-950/10 px-2 rounded">
@@ -385,10 +510,32 @@ export const CommitsPage: React.FC<CommitsPageProps> = ({
               </div>
 
               {/* Footer */}
-              <div className="border-t border-white/5 px-6 py-3 flex justify-end">
+              <div className="border-t border-white/5 px-6 py-3.5 flex items-center justify-between">
+                
+                {/* Revert / Cherry-pick contextual buttons */}
+                <div>
+                  {selectedBranch === currentBranchName ? (
+                    <button
+                      onClick={() => handleRevertCommit(activeCommit.hash)}
+                      disabled={actionLoading}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" /> Revert Commit
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleCherryPick(activeCommit.hash)}
+                      disabled={actionLoading}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Cherry-Pick
+                    </button>
+                  )}
+                </div>
+
                 <button
                   onClick={() => setActiveCommit(null)}
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all"
+                  className="px-4 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold transition-all"
                 >
                   Close Details
                 </button>

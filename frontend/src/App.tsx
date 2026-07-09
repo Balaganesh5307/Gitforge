@@ -562,11 +562,14 @@ function App() {
 
           {currentPage === 'commits' && (
             <CommitsPage
+              repoId={REPO_ID}
               commits={commits}
               branches={branches}
               currentBranchName={currentBranchName}
               members={members}
               onSelectPage={setCurrentPage}
+              onRefreshData={refreshAllData}
+              showNotification={showNotification}
             />
           )}
 
