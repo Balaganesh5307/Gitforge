@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Commit, Branch, PullRequest, Issue, Activity, Member } from '../types';
 import {
   GitCommit,
@@ -10,9 +10,12 @@ import {
   Heart,
   Bot,
   Plus,
-  Flame
+  Flame,
+  Database,
+  GitMerge
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { motion } from 'framer-motion';
 
 interface DashboardProps {
   repoId: string;
@@ -24,6 +27,9 @@ interface DashboardProps {
   issues: Issue[];
   activities: Activity[];
   members: Member[];
+  repositories: any[];
+  currentRepoId: string;
+  onSelectRepo: (id: string) => void;
   onTriggerBotAction: (type: 'commit' | 'issue' | 'conflict') => void;
   onSelectPage: (page: string) => void;
 }
@@ -38,19 +44,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
   issues,
   activities,
   members,
+  repositories,
+  currentRepoId,
+  onSelectRepo,
   onTriggerBotAction,
   onSelectPage
 }) => {
   // Widget calculations
-  const totalCommitsCount = commits.length;
   const activeBranchesCount = branches.length;
   const openPrsCount = prs.filter(p => p.status === 'open').length;
   const closedPrsCount = prs.filter(p => p.status === 'merged' || p.status === 'closed').length;
   const openIssuesCount = issues.filter(i => i.status !== 'done').length;
-  const botCount = members.filter(m => m.role === 'bot').length;
+
+  // State for activity filtering
+  const [activityFilter, setActivityFilter] = useState<'all' | 'commit' | 'pr' | 'issue'>('all');
 
   // Calculate Repository Health %
-  // Higher open issues and unresolved conflicts reduces health
   const repoHealth = useMemo(() => {
     let health = 100;
     const unresolvedIssues = issues.filter(i => i.status !== 'done' && i.priority === 'high').length;
@@ -61,7 +70,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return Math.max(30, Math.min(100, health));
   }, [issues, prs]);
 
-  // Weekly commit activity data (last 7 days)
+  // Weekly commit activity data breakdown (last 7 days, you vs bots)
   const chartData = useMemo(() => {
     const dates = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
@@ -69,13 +78,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return d.toISOString().split('T')[0];
     }).reverse();
 
-    const commitCounts: Record<string, number> = {};
-    dates.forEach(d => { commitCounts[d] = 0; });
+    const userCommitCounts: Record<string, number> = {};
+    const botCommitCounts: Record<string, number> = {};
+    dates.forEach(d => {
+      userCommitCounts[d] = 0;
+      botCommitCounts[d] = 0;
+    });
 
     commits.forEach(c => {
       const commitDate = c.timestamp.split('T')[0];
-      if (commitDate in commitCounts) {
-        commitCounts[commitDate]++;
+      if (commitDate in userCommitCounts) {
+        if (c.author === 'you') {
+          userCommitCounts[commitDate]++;
+        } else {
+          botCommitCounts[commitDate]++;
+        }
       }
     });
 
@@ -83,18 +100,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const dayName = new Date(date).toLocaleDateString([], { weekday: 'short' });
       return {
         name: dayName,
-        commits: commitCounts[date]
+        you: userCommitCounts[date],
+        bots: botCommitCounts[date],
+        total: userCommitCounts[date] + botCommitCounts[date]
       };
     });
   }, [commits]);
 
-  // Heatmap data (Last 6 months / 26 weeks)
+  // Filter activities feed based on active tab
+  const filteredActivities = useMemo(() => {
+    return activities.filter(act => {
+      if (activityFilter === 'all') return true;
+      if (activityFilter === 'commit') return act.type === 'commit';
+      if (activityFilter === 'pr') return act.type.startsWith('pr_');
+      if (activityFilter === 'issue') return act.type.startsWith('issue_');
+      return true;
+    });
+  }, [activities, activityFilter]);
+
+  // Heatmap data (Last 120 days)
   const heatmapData = useMemo(() => {
     const today = new Date();
     const cells: { dateStr: string; count: number; dayOfWeek: number }[] = [];
 
-    // Go back 180 days
-    for (let i = 180; i >= 0; i--) {
+    for (let i = 120; i >= 0; i--) {
       const d = new Date();
       d.setDate(today.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
@@ -110,7 +139,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return cells;
   }, [commits]);
 
-  // Get color for heatmap grid cell based on commit intensity
   const getHeatmapColor = (count: number) => {
     if (count === 0) return 'bg-[#161b22] hover:bg-[#21262d]';
     if (count === 1) return 'bg-emerald-950 text-emerald-300 border border-emerald-900/30';
@@ -124,15 +152,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
       
       {/* Welcome Banner */}
       <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        {/* Decorative background glow */}
         <div className="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-purple-500/10 blur-[60px]" />
         <div className="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px]" />
 
-        <div className="z-10 min-w-0">
-          <h1 className="text-xl md:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-200 to-blue-400">
-            {repoName}
-          </h1>
-          <p className="text-sm text-dark-muted mt-1 max-w-2xl truncate">
+        <div className="z-10 min-w-0 text-left">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="text-[10px] font-black text-purple-400 font-mono tracking-wider uppercase">Active Repository:</span>
+            <select
+              value={currentRepoId}
+              onChange={(e) => onSelectRepo(e.target.value)}
+              className="bg-[#0b0f19] border border-white/10 rounded-lg px-2.5 py-1 text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 focus:outline-none focus:border-purple-500/40 cursor-pointer"
+            >
+              {repositories.map((r) => (
+                <option key={r.id} value={r.id} className="text-gray-200 bg-[#080d16] font-bold">
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-dark-muted mt-2 max-w-2xl leading-relaxed">
             {repoDesc}
           </p>
         </div>
@@ -147,64 +185,112 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Grid of widgets */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Commits */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Total Commits</span>
-            <h3 className="text-2xl font-bold mt-1 text-gray-100">{totalCommitsCount}</h3>
+        {/* Total Repositories */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-indigo-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Total Repositories</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{repositories.length}</h3>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <GitCommit className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <Database className="w-5 h-5" />
           </div>
-        </div>
+        </motion.div>
 
         {/* Active Branches */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Active Branches</span>
-            <h3 className="text-2xl font-bold mt-1 text-gray-100">{activeBranchesCount}</h3>
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-amber-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Active Branches</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{activeBranchesCount}</h3>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
             <GitBranch className="w-5 h-5" />
           </div>
-        </div>
+        </motion.div>
 
-        {/* PRs */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Open PRs</span>
-            <h3 className="text-2xl font-bold mt-1 text-gray-100">{openPrsCount}</h3>
-            <span className="text-[10px] text-dark-muted">{closedPrsCount} Merged</span>
+        {/* Open Pull Requests */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-emerald-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Open PRs</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{openPrsCount}</h3>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
             <GitPullRequest className="w-5 h-5" />
           </div>
-        </div>
+        </motion.div>
 
-        {/* Repository Health */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Repo Health</span>
-            <h3 className="text-2xl font-bold mt-1 text-emerald-400 flex items-center gap-1.5">
-              {repoHealth}%
-              {repoHealth > 80 ? (
-                <Heart className="w-4 h-4 text-emerald-400 fill-current" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-yellow-400" />
-              )}
-            </h3>
-            <span className="text-[10px] text-dark-muted">{openIssuesCount} Unresolved Issues</span>
+        {/* Closed Pull Requests */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-purple-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Closed PRs</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{closedPrsCount}</h3>
           </div>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
-            repoHealth > 80
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-              : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-          }`}>
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+            <GitMerge className="w-5 h-5" />
+          </div>
+        </motion.div>
+
+        {/* Open Issues */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-red-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Open Issues</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{openIssuesCount}</h3>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
             <AlertCircle className="w-5 h-5" />
           </div>
-        </div>
+        </motion.div>
+
+        {/* Contributors */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between transition-all hover:border-blue-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Contributors</span>
+            <h3 className="text-2xl font-black mt-1.5 text-gray-100">{members.length}</h3>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+            <Users className="w-5 h-5" />
+          </div>
+        </motion.div>
+
+        {/* Repository Health (Spans 2 columns) */}
+        <motion.div
+          whileHover={{ scale: 1.01, y: -1 }}
+          className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-between col-span-1 sm:col-span-2 transition-all hover:border-rose-500/20"
+        >
+          <div className="text-left">
+            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider block font-mono">Repository Health</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <h3 className="text-2xl font-black text-rose-400 flex items-center gap-1.5">
+                {repoHealth}%
+              </h3>
+              <span className="text-[10px] text-dark-muted font-medium font-mono">
+                {openIssuesCount === 0 ? 'Healthy codebase' : `${openIssuesCount} unresolved warnings`}
+              </span>
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 relative">
+            <Heart className="w-5 h-5 animate-pulse" />
+          </div>
+        </motion.div>
 
       </div>
 
@@ -216,17 +302,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
               <ActivityIcon className="w-4 h-4 text-indigo-400" />
-              Weekly Commit Frequency
+              Weekly Activity
             </h3>
-            <span className="text-xs text-dark-muted font-mono">Last 7 Days</span>
+            <span className="text-xs text-dark-muted font-mono">Stacked: You vs Bots</span>
           </div>
 
           <div className="flex-grow min-h-0 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorCommits" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                  <linearGradient id="colorYou" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorBots" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
                     <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -237,14 +327,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   labelStyle={{ color: '#9ca3af', fontFamily: 'monospace' }}
                   itemStyle={{ color: '#a78bfa' }}
                 />
-                <Area type="monotone" dataKey="commits" stroke="#6366f1" strokeWidth={2.5} fillOpacity={1} fill="url(#colorCommits)" />
+                <Area type="monotone" stackId="1" dataKey="you" stroke="#8b5cf6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorYou)" name="You" />
+                <Area type="monotone" stackId="1" dataKey="bots" stroke="#6366f1" strokeWidth={2.5} fillOpacity={1} fill="url(#colorBots)" name="Bots" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Right Side: Simulation Control Room */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between">
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between text-left">
           <div>
             <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
               <Bot className="w-4.5 h-4.5 text-purple-400" />
@@ -256,8 +347,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="space-y-2.5 my-4">
-            
-            {/* Trigger Commit */}
             <button
               onClick={() => onTriggerBotAction('commit')}
               className="w-full p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-purple-500/10 hover:border-purple-500/30 text-gray-300 hover:text-purple-300 flex items-center justify-between text-xs font-semibold transition-all group"
@@ -269,7 +358,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <Plus className="w-3.5 h-3.5" />
             </button>
 
-            {/* Trigger Issue */}
             <button
               onClick={() => onTriggerBotAction('issue')}
               className="w-full p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-indigo-500/10 hover:border-indigo-500/30 text-gray-300 hover:text-indigo-300 flex items-center justify-between text-xs font-semibold transition-all group"
@@ -281,7 +369,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <Plus className="w-3.5 h-3.5" />
             </button>
 
-            {/* Trigger Conflict */}
             <button
               onClick={() => onTriggerBotAction('conflict')}
               className="w-full p-3 rounded-xl bg-white/[0.02] border border-red-500/10 hover:bg-red-500/10 hover:border-red-500/30 text-gray-300 hover:text-red-400 flex items-center justify-between text-xs font-semibold transition-all group"
@@ -292,7 +379,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </span>
               <Plus className="w-3.5 h-3.5" />
             </button>
-
           </div>
 
           <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs text-dark-muted font-mono">
@@ -313,11 +399,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       </div>
 
-      {/* Contribution Heatmap Calendar */}
-      <div className="glass-panel p-5 rounded-2xl border border-white/5">
+      {/* Commit Heatmap Section */}
+      <div className="glass-panel p-5 rounded-2xl border border-white/5 text-left">
         <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5 mb-4">
           <Flame className="w-4 h-4 text-emerald-400" />
-          Contribution calendar heatmap
+          Commit Heatmap
         </h3>
 
         <div className="overflow-x-auto">
@@ -333,7 +419,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="flex items-center justify-between mt-3 text-xs text-dark-muted font-mono">
-          <span>Last 6 Months Timeline</span>
+          <span>Commit Contribution Activity Timeline</span>
           <div className="flex items-center gap-1.5">
             <span>Less</span>
             <span className="w-3.5 h-3.5 rounded-sm bg-[#161b22]" />
@@ -346,17 +432,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Bottom Layout (Activity Feed, Team List) */}
+      {/* Bottom Layout (Activity Feed, Diagnostics, Team List) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Activity Feed */}
-        <div className="md:col-span-2 glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px]">
-          <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4">
-            Recent Event Activity Feed
-          </h3>
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider">
+              Activity Feed
+            </h3>
+            
+            {/* Feed Filters */}
+            <div className="flex gap-1.5">
+              {['all', 'commit', 'pr', 'issue'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActivityFilter(f as any)}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold capitalize transition-all ${
+                    activityFilter === f
+                      ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300'
+                      : 'bg-white/5 border border-white/5 text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex-grow overflow-y-auto pr-1 space-y-3">
-            {activities.slice(0, 15).map((act) => {
+            {filteredActivities.slice(0, 15).map((act) => {
               const formattedTime = new Date(act.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) + 
                 ' ' + new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
               
@@ -370,19 +475,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? 'bg-emerald-500'
                         : 'bg-indigo-400'
                     }`} />
-                    <span className="text-gray-300 font-mono">
+                    <span className="text-gray-300 font-mono text-[11px] text-left leading-normal">
                       <strong className="text-gray-200">{act.user === 'you' ? 'You' : act.user}</strong> {act.message}
                     </span>
                   </div>
-                  <span className="text-[10px] text-dark-muted font-mono flex-shrink-0 ml-4">{formattedTime}</span>
+                  <span className="text-[9px] text-dark-muted font-mono flex-shrink-0 ml-4">{formattedTime}</span>
                 </div>
               );
             })}
+            {filteredActivities.length === 0 && (
+              <div className="text-center text-xs text-dark-muted font-mono py-12">No activity matches this filter.</div>
+            )}
+          </div>
+        </div>
+
+        {/* System Diagnostics Panel */}
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
+          <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <Database className="w-4 h-4 text-indigo-400" />
+            Simulator Diagnostics
+          </h3>
+          <div className="flex-grow space-y-3 font-mono text-[10px] text-dark-muted flex flex-col justify-center">
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>DB Synchronization:</span>
+              <span className="text-emerald-400 font-bold">ONLINE (100% OK)</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Webhook Nodes:</span>
+              <span className="text-purple-400">4 Active</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Simulated CPU Load:</span>
+              <span className="text-gray-300">14%</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>In-Memory Size:</span>
+              <span className="text-gray-300">32.4 MB</span>
+            </div>
+            <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <span>Bot Workers:</span>
+              <span className="text-indigo-400">3 Active</span>
+            </div>
+            <div className="pt-2 flex flex-col gap-1.5">
+              <span className="font-sans text-[9px] font-bold uppercase text-dark-muted tracking-wide">Workspace Health Index</span>
+              <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full" style={{ width: `${repoHealth}%` }} />
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Contributors List */}
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px]">
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col h-[320px] text-left">
           <div className="flex items-center gap-1.5 mb-4">
             <Users className="w-4 h-4 text-purple-400" />
             <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider">

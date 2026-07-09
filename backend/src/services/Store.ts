@@ -25,6 +25,20 @@ const DEFAULT_REPOS: Repository[] = [
     description: 'An interactive developer collaboration project to learn Git workflows, conflict resolutions, and project boards.',
     owner: 'you',
     createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days ago
+  },
+  {
+    id: 'gitforge-bot-core',
+    name: 'GitForge-Bot-Core-Engine',
+    description: 'Core logic orchestrating simulated bot collaborator pushes, automated PR approvals, and conflict injection engines.',
+    owner: 'you',
+    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'gitforge-docs-portal',
+    name: 'GitForge-Tutorials-Portal',
+    description: 'Markdown guidelines, syntax guides, and interactive visual aids teaching branching models and three-way merging.',
+    owner: 'you',
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
   }
 ];
 
