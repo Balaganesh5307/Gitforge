@@ -21,13 +21,26 @@ import {
   Plus,
   Trash2,
   Bot,
-  Activity as ActivityIcon
+  Activity as ActivityIcon,
+  Menu,
+  Bell,
+  GitCommit
 } from 'lucide-react';
 
 const REPO_ID = 'gitforge-demo';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<string>('landing');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [latency, setLatency] = useState(3);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLatency(Math.floor(Math.random() * 5) + 2);
+    }, 4500);
+    return () => clearInterval(interval);
+  }, []);
   
   // Repo States
   const [repo, setRepo] = useState<Repository | null>(null);
@@ -262,25 +275,39 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#060a12] text-gray-100 select-none">
+    <div className="flex h-screen overflow-hidden bg-[#060a12] text-gray-100 select-none relative">
       
+      {/* Mobile Sidebar backdrop overlay */}
+      {mobileSidebarOpen && (
+        <div
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-30 lg:hidden animate-fade-in"
+        />
+      )}
+
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-[#080d17] border-r border-white/5 flex flex-col justify-between flex-shrink-0 z-30">
+      <aside className={`fixed inset-y-0 left-0 w-64 bg-[#080d17] border-r border-white/5 flex flex-col justify-between z-35 transition-transform duration-300 lg:static lg:translate-x-0 ${
+        mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         <div>
-          {/* Logo Brand */}
-          <div className="p-6 border-b border-white/5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
+          {/* Logo Brand (Clickable to return to Landing Page) */}
+          <button
+            onClick={() => setCurrentPage('landing')}
+            className="w-full p-6 border-b border-white/5 flex items-center gap-3 text-left hover:bg-white/[0.02] active:bg-white/[0.04] transition-all focus:outline-none group"
+            title="Return to Landing Page"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow group-hover:scale-105 transition-transform">
               <Bot className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
+              <h2 className="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5 group-hover:text-purple-400 transition-colors">
                 GitForge
               </h2>
-              <span className="text-[10px] text-purple-400 font-mono font-medium tracking-wide uppercase">
+              <span className="text-[10px] text-purple-400 font-mono font-medium tracking-wide uppercase block">
                 Collab Simulator
               </span>
             </div>
-          </div>
+          </button>
 
           {/* Nav Links */}
           <nav className="p-4 space-y-1">
@@ -299,7 +326,10 @@ function App() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setCurrentPage(item.id)}
+                  onClick={() => {
+                    setCurrentPage(item.id);
+                    setMobileSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
                     isActive
                       ? 'bg-purple-600/15 border border-purple-500/20 text-purple-300 shadow-sm'
@@ -343,7 +373,15 @@ function App() {
         {/* Header Bar */}
         <header className="h-16 border-b border-white/5 bg-[#080d17]/80 backdrop-blur-md flex items-center justify-between px-6 z-20 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-mono font-medium text-dark-muted">Active Branch:</span>
+            {/* Mobile Hamburger menu toggle */}
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="p-2 text-dark-muted hover:text-purple-300 lg:hidden rounded-lg bg-white/5 border border-white/10"
+              title="Open Navigation menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-mono font-medium text-dark-muted hidden sm:inline">Active Branch:</span>
             <select
               value={currentBranchName}
               onChange={(e) => handleCheckoutBranch(e.target.value)}
@@ -353,14 +391,43 @@ function App() {
                 <option key={b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
+
+            {/* Quick Counters Widget */}
+            <div className="hidden xl:flex items-center gap-3.5 border-l border-white/5 pl-4 ml-2 text-[11px] text-dark-muted font-mono select-none">
+              <span className="flex items-center gap-1" title="Total Commits">
+                <GitCommit className="w-3.5 h-3.5 text-purple-400" />
+                {commits.length}
+              </span>
+              <span className="flex items-center gap-1" title="Open Pull Requests">
+                <GitPullRequest className="w-3.5 h-3.5 text-emerald-400" />
+                {prs.filter(p => p.status === 'open').length}
+              </span>
+              <span className="flex items-center gap-1" title="Open Issues">
+                <AlertCircle className="w-3.5 h-3.5 text-indigo-400" />
+                {issues.filter(i => i.status !== 'done').length}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
             
-            {/* Quick Actions Feed indicator */}
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-dark-muted font-mono">
-              <ActivityIcon className="w-3.5 h-3.5" />
-              <span>Simulated Sandbox Environment</span>
+            {/* Sync Latency Indicator */}
+            <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-2.5 py-1 rounded-lg font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              <span>Synced: {latency}ms</span>
+            </div>
+
+            {/* Bot Avatar stack in header */}
+            <div className="hidden sm:flex items-center -space-x-1.5 mr-1 select-none">
+              {members.filter(m => m.role === 'bot').map(m => (
+                <img
+                  key={m.id}
+                  src={m.avatarUrl}
+                  alt={m.username}
+                  className="w-5.5 h-5.5 rounded-full border border-[#080d17] bg-slate-900 shadow-sm"
+                  title={`${m.username} (Bot Collaborator)`}
+                />
+              ))}
             </div>
 
             <button
@@ -370,6 +437,29 @@ function App() {
               <Bot className="w-3.5 h-3.5" />
               Bot Commit
             </button>
+
+            {/* Interactive Notifications Bell */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="p-2 text-dark-muted hover:text-purple-300 rounded-lg bg-white/5 border border-white/10 relative transition-all"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping" />
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-purple-500" />
+              </button>
+              {showNotifications && (
+                <div className="absolute right-0 mt-2.5 w-72 glass-panel border border-white/10 rounded-2xl shadow-2xl p-4 z-40 bg-[#090e18]/95 max-h-[300px] overflow-y-auto font-mono text-[11px] space-y-2 text-left">
+                  <h4 className="font-bold text-gray-200 border-b border-white/5 pb-2 mb-2 uppercase text-[9px] tracking-wider">Repository Live Notifications</h4>
+                  {activities.slice(0, 5).map(act => (
+                    <div key={act.id} className="p-2 rounded bg-white/[0.01] border border-white/[0.02]">
+                      <strong className="text-gray-300">{act.user}</strong> {act.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

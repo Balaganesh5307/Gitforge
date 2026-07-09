@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, Terminal, GitBranch, GitPullRequest, ListTodo, BarChart2, ShieldAlert } from 'lucide-react';
+import { Bot, Terminal, GitBranch, GitPullRequest, ListTodo, BarChart2, ShieldAlert, Github } from 'lucide-react';
 import heroImage from '../assets/hero.png';
 
 interface LandingPageProps {
@@ -17,7 +17,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
 
       {/* Floating Glass Navbar */}
       <div className="max-w-6xl mx-auto px-6 pt-4 sticky top-0 z-50">
-        <header className="glass-panel border border-white/10 bg-[#080d17]/80 backdrop-blur-md px-6 py-3.5 rounded-2xl flex items-center justify-between shadow-2xl">
+        <header className="glass-panel premium-navbar border border-white/10 bg-[#080d17]/80 backdrop-blur-md px-6 py-3.5 rounded-2xl flex items-center justify-between shadow-2xl">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
               <Bot className="w-5 h-5" />
@@ -29,25 +29,44 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
           </div>
           
           {/* Middle Nav Links */}
-          <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-dark-muted font-mono">
+          <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-dark-muted font-mono select-none">
             <span className="text-gray-600">/</span>
-            <span className="hover:text-purple-400 cursor-pointer transition-colors">features</span>
+            <span
+              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+              className="hover:text-purple-400 cursor-pointer transition-colors"
+            >
+              features
+            </span>
             <span className="text-gray-600">/</span>
-            <span className="hover:text-purple-400 cursor-pointer transition-colors">bot-network</span>
-            <span className="text-gray-600">/</span>
-            <span className="hover:text-purple-400 cursor-pointer transition-colors">sandbox</span>
+            <span
+              onClick={() => document.getElementById('sandbox')?.scrollIntoView({ behavior: 'smooth' })}
+              className="hover:text-purple-400 cursor-pointer transition-colors"
+            >
+              sandbox-preview
+            </span>
             <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
               engine:online
             </span>
           </nav>
           
-          <button
-            onClick={onLaunch}
-            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow hover:-translate-y-0.5 transition-all"
-          >
-            Launch Simulator
-          </button>
+          <div className="flex items-center gap-2.5">
+            <a
+              href="https://github.com/Balaganesh5307/Gitforge.git"
+              target="_blank"
+              rel="noreferrer"
+              className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-xl transition-all"
+              title="View GitHub Repository"
+            >
+              <Github className="w-4 h-4" />
+            </a>
+            <button
+              onClick={onLaunch}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow hover:-translate-y-0.5 transition-all"
+            >
+              Launch Simulator
+            </button>
+          </div>
         </header>
       </div>
 
@@ -90,7 +109,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
         </div>
 
         {/* Graphic Mockup Showcase */}
-        <div className="mt-16 w-full max-w-4xl glass-panel rounded-2xl border border-white/10 p-2 shadow-2xl relative group">
+        <div id="sandbox" className="mt-16 w-full max-w-4xl glass-panel rounded-2xl border border-white/10 p-2 shadow-2xl relative group">
           <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-purple-500/20 to-indigo-500/20 blur-xl opacity-40 group-hover:opacity-60 transition-opacity" />
           <div className="bg-[#0b0f19] rounded-xl overflow-hidden aspect-[16/10] relative">
             <img
@@ -119,7 +138,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       </section>
 
       {/* Features Grid Section */}
-      <section className="max-w-6xl mx-auto px-6 py-20 border-t border-white/5 relative z-10">
+      <section id="features" className="max-w-6xl mx-auto px-6 py-20 border-t border-white/5 relative z-10">
         <h2 className="text-xl font-bold text-gray-200 uppercase tracking-widest text-center mb-12">
           Simulator Capabilities
         </h2>
