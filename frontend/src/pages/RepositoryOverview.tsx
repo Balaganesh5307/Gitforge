@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Commit, Branch, PullRequest, Issue, Activity, Member } from '../types';
 import { 
   Folder, 
@@ -17,9 +17,12 @@ import {
   Eye,
   GitFork,
   AlertCircle,
-  Bot
+  Bot,
+  X,
+  Sparkles,
+  GitMerge
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RepositoryOverviewProps {
   repoId: string;
@@ -36,6 +39,97 @@ interface RepositoryOverviewProps {
   onSelectPage: (page: string) => void;
 }
 
+// Simulated file contents database
+const MOCK_FILE_CONTENTS: Record<string, string> = {
+  'package.json': `{
+  "name": "gitforge-visual-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "framer-motion": "^11.0.8",
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.12.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "typescript": "^5.2.2",
+    "vite": "^5.1.6"
+  }
+}`,
+  'tsconfig.json': `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}`,
+  '.gitignore': `# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# dependency directories
+node_modules/
+jspm_packages/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# production build
+dist/
+build/
+out/`,
+  'README.md': `# 🛠️ GitForge Collaborative Visual Sandbox
+
+Welcome to the interactive Git simulator dashboard workspace. Practice branching, pushes, merges, and reviews!
+
+## 🚀 Getting Started
+
+1. **Checkout Branch**: Select branch tracks in the repository header.
+2. **Git Command Terminal**: Simulate shell actions using terminal simulators.
+3. **Bot Controls**: Trigger bot automated check-ins and pull requests.
+4. **Resolve Conflicts**: Visually accept incoming or current changes inside editor tools.
+
+## 📝 Configuration
+
+Dependencies are controlled inside \`package.json\`. Customize parameters inside workspace settings.`
+};
+
 export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
   repoId,
   repoName,
@@ -51,9 +145,11 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
   onSelectPage
 }) => {
   
-  // Calculate stats based on active commits/branches
+  // State for active mock file viewer modal
+  const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
+
+  // Calculate commits reachable on current branch
   const activeBranchCommits = useMemo(() => {
-    // Filter commits reachable on current checked out branch
     const branch = branches.find(b => b.name === currentBranchName);
     if (!branch) return commits;
     
@@ -82,7 +178,7 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
     return activeBranchCommits[0] || null;
   }, [activeBranchCommits]);
 
-  // Extract simulated files list from commits
+  // Simulated explorer files list
   const mockFiles = [
     { name: 'backend', isFolder: true, size: '--', lastCommit: 'feat: setup express routes', date: '2 days ago' },
     { name: 'frontend', isFolder: true, size: '--', lastCommit: 'style: design repository dashboard', date: '3 days ago' },
@@ -92,9 +188,37 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
     { name: 'tsconfig.json', isFolder: false, size: '420 B', lastCommit: 'first commit', date: '7 days ago' }
   ];
 
+  const handleFileClick = (name: string, isFolder: boolean) => {
+    if (isFolder) return;
+    const content = MOCK_FILE_CONTENTS[name] || '// Empty simulated file content';
+    setSelectedFile({ name, content });
+  };
+
   return (
     <div className="space-y-6">
       
+      {/* Compare & Pull Request alert bar */}
+      {currentBranchName !== 'main' && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between p-3.5 bg-purple-500/10 border border-purple-500/35 rounded-2xl text-xs text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
+            <span className="text-gray-200">
+              Branch <strong className="text-purple-300 font-semibold">{currentBranchName}</strong> is active and contains unmerged commits.
+            </span>
+          </div>
+          <button
+            onClick={() => onSelectPage('prs')}
+            className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-1 px-3 rounded-lg transition-all active:scale-[0.98]"
+          >
+            Compare & pull request <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </motion.div>
+      )}
+
       {/* Repository Header Details */}
       <div className="glass-panel p-6 rounded-3xl border border-white/5 relative overflow-hidden text-left">
         <div className="absolute -top-24 -left-24 w-52 h-52 rounded-full bg-purple-600/10 blur-[70px] pointer-events-none" />
@@ -116,7 +240,6 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
             </p>
           </div>
 
-          {/* Social Stars & Forks Mockup */}
           <div className="flex items-center gap-2 select-none">
             <span className="flex items-center gap-1 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg text-[10px] font-bold font-mono text-gray-300">
               <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> Stars 12
@@ -135,7 +258,7 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
           {[
             { label: 'Commits', value: activeBranchCommits.length, icon: GitCommit, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
             { label: 'Branches', value: branches.length, icon: GitBranch, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-            { label: 'Open PRs', value: prs.filter(p => p.status === 'open').length, icon: GitCommit, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+            { label: 'Open PRs', value: prs.filter(p => p.status === 'open').length, icon: GitMerge, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
             { label: 'Issues', value: issues.filter(i => i.status !== 'done').length, icon: AlertCircle, color: 'text-red-400 bg-red-500/10 border-red-500/20' }
           ].map((stat, idx) => {
             const StatIcon = stat.icon;
@@ -214,7 +337,14 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
                     ) : (
                       <FileText className="w-4 h-4 text-purple-400" />
                     )}
-                    <span className={`font-semibold cursor-pointer ${file.isFolder ? 'text-indigo-300 hover:text-indigo-200' : 'text-purple-300 hover:text-purple-200'}`}>
+                    <span
+                      onClick={() => handleFileClick(file.name, file.isFolder)}
+                      className={`font-semibold cursor-pointer transition-colors ${
+                        file.isFolder 
+                          ? 'text-indigo-300 hover:text-indigo-200' 
+                          : 'text-purple-300 hover:text-purple-200'
+                      }`}
+                    >
                       {file.name}
                     </span>
                   </div>
@@ -303,6 +433,32 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
             </div>
           </div>
 
+          {/* Languages breakdown bar */}
+          <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
+            <h3 className="text-xs font-bold text-gray-200 uppercase tracking-widest font-mono">Languages</h3>
+            
+            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden flex">
+              <div className="bg-indigo-500 h-full" style={{ width: '74%' }} title="TypeScript 74.2%" />
+              <div className="bg-purple-500 h-full" style={{ width: '22%' }} title="CSS 21.8%" />
+              <div className="bg-amber-500 h-full" style={{ width: '4%' }} title="HTML 4.0%" />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-[10px] font-mono text-dark-muted">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                <span>TS: 74%</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+                <span>CSS: 22%</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span>HTML: 4%</span>
+              </div>
+            </div>
+          </div>
+
           {/* Contributors section */}
           <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
             <div className="flex items-center justify-between">
@@ -350,7 +506,7 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
                 onClick={() => onSelectPage('releases')}
                 className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors pl-6 pt-1 font-sans"
               >
-                View all releases <ArrowRight className="w-3 h-3" />
+                View all releases <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </div>
           </div>
@@ -378,6 +534,53 @@ export const RepositoryOverview: React.FC<RepositoryOverviewProps> = ({
         </div>
 
       </div>
+
+      {/* INTERACTIVE FILE VIEW MODAL OVERLAY */}
+      <AnimatePresence>
+        {selectedFile && (
+          <div className="fixed inset-0 z-50 bg-[#06080e]/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="w-full max-w-3xl glass-panel premium-navbar rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[85vh] bg-[#090d16]"
+            >
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4.5 h-4.5 text-purple-400" />
+                  <span className="text-sm font-mono font-bold text-gray-200">{selectedFile.name}</span>
+                </div>
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="p-1 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Code Box Area */}
+              <div className="p-6 overflow-y-auto text-left">
+                <pre className="font-mono text-xs text-gray-300 leading-normal bg-[#05080f] border border-white/5 rounded-xl p-5 overflow-x-auto whitespace-pre select-text">
+                  <code>{selectedFile.content}</code>
+                </pre>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="border-t border-white/5 px-6 py-3 flex justify-end">
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all"
+                >
+                  Close Code Viewer
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
