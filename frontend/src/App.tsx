@@ -13,6 +13,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
 import { RepositoryOverview } from './pages/RepositoryOverview';
 import { BranchesPage } from './pages/BranchesPage';
+import { CommitsPage } from './pages/CommitsPage';
 import {
   LayoutDashboard,
   GitBranch,
@@ -342,6 +343,7 @@ function App() {
               { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
               { id: 'repository', label: 'Repository Overview', icon: FolderOpen },
               { id: 'branches', label: 'Branches & Graph', icon: GitBranch },
+              { id: 'commits', label: 'Commit History', icon: GitCommit },
               { id: 'prs', label: 'Pull Requests', icon: GitPullRequest, badge: prs.filter(p => p.status === 'open').length },
               { id: 'issues', label: 'Issue Tracker', icon: AlertCircle, badge: issues.filter(i => i.status !== 'done').length },
               { id: 'kanban', label: 'Kanban Board', icon: ListTodo },
@@ -554,6 +556,16 @@ function App() {
               members={members}
               prs={prs}
               issues={issues}
+              onSelectPage={setCurrentPage}
+            />
+          )}
+
+          {currentPage === 'commits' && (
+            <CommitsPage
+              commits={commits}
+              branches={branches}
+              currentBranchName={currentBranchName}
+              members={members}
               onSelectPage={setCurrentPage}
             />
           )}
