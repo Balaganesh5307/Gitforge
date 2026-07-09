@@ -11,11 +11,12 @@ import {
   Sparkles,
   GitCommit,
   GitMerge,
-  ChevronRight,
-  Database,
   Search,
   Check,
-  X
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
+  FileCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BranchGraph } from '../components/BranchGraph';
@@ -41,7 +42,7 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
 }) => {
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showRenameModal, setShowRenameModal] = useState<string | null>(null); // holds old branch name
+  const [showRenameModal, setShowRenameModal] = useState<string | null>(null);
   
   // Form input states
   const [newBranchName, setNewBranchName] = useState('');
@@ -64,8 +65,63 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
     commits: Commit[];
   } | null>(null);
 
+  // Active branch protections states
+  const [restrictDirectPush, setRestrictDirectPush] = useState(true);
+  const [requirePR, setRequirePR] = useState(false);
+
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Expand conflict files details
+  const [expandedConflictFile, setExpandedConflictFile] = useState<string | null>(null);
+
+  // Reusable Git Graph traversal helper to get reachable commits for a branch
+  const getReachableCommitsSet = (branchName: string): Set<string> => {
+    const branch = branches.find(b => b.name === branchName);
+    if (!branch) return new Set();
+
+    const visited = new Set<string>();
+    const queue = [branch.headCommitHash];
+    const commitsMap = new Map<string, Commit>();
+    commits.forEach(c => commitsMap.set(c.hash, c));
+
+    while (queue.length > 0) {
+      const hash = queue.shift()!;
+      if (visited.has(hash)) continue;
+      visited.add(hash);
+
+      const commit = commitsMap.get(hash);
+      if (commit) {
+        queue.push(...commit.parentHashes);
+      }
+    }
+    return visited;
+  };
+
+  // Pre-calculate Ahead/Behind stats compared to default branch 'main'
+  const branchMetrics = useMemo(() => {
+    const mainSet = getReachableCommitsSet('main');
+    const metrics: Record<string, { ahead: number; behind: number }> = {};
+
+    branches.forEach(b => {
+      if (b.name === 'main') {
+        metrics[b.name] = { ahead: 0, behind: 0 };
+        return;
+      }
+
+      const branchSet = getReachableCommitsSet(b.name);
+      
+      // Ahead = commits in this branch that are NOT in main
+      const ahead = [...branchSet].filter(h => !mainSet.has(h)).length;
+      
+      // Behind = commits in main that are NOT in this branch
+      const behind = [...mainSet].filter(h => !branchSet.has(h)).length;
+
+      metrics[b.name] = { ahead, behind };
+    });
+
+    return metrics;
+  }, [branches, commits]);
 
   // 1. Create Branch API Trigger
   const handleCreateBranch = async (e: React.FormEvent) => {
@@ -159,6 +215,7 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
     }
 
     setIsComparing(true);
+    setExpandedConflictFile(null);
     try {
       const response = await fetch(`http://localhost:5000/api/repos/${repoId}/compare?source=${compareSource}&target=${compareTarget}`);
       const data = await response.json();
@@ -175,7 +232,7 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
     }
   };
 
-  // Filtered branches list based on search query
+  // Filtered branches list
   const filteredBranches = useMemo(() => {
     return branches.filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [branches, searchQuery]);
@@ -219,7 +276,7 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
       {/* Main Grid: Branches Table (Left) & Compare / Git Graph (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
         
-        {/* LEFT COLUMN: Branch table & search (2 columns width on desktop) */}
+        {/* LEFT COLUMN: Branch table & search */}
         <div className="lg:col-span-2 space-y-6">
           
           {/* Branch Table Card */}
@@ -254,11 +311,12 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
             <div className="divide-y divide-white/5">
               {filteredBranches.map(branch => {
                 const isActive = branch.name === currentBranchName;
+                const metrics = branchMetrics[branch.name] || { ahead: 0, behind: 0 };
                 return (
                   <div key={branch.name} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.01] transition-all">
                     
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center flex-wrap gap-2">
                         <GitBranch className={`w-4 h-4 ${isActive ? 'text-purple-400' : 'text-gray-500'}`} />
                         <span className="font-mono text-xs font-bold text-gray-200">{branch.name}</span>
                         
@@ -271,6 +329,18 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
                           <span className="px-1.5 py-0.2 bg-purple-500/15 border border-purple-500/25 text-purple-300 rounded text-[8px] font-mono font-bold uppercase tracking-wider animate-pulse">
                             active
                           </span>
+                        )}
+
+                        {/* Ahead/Behind Commit markers */}
+                        {branch.name !== 'main' && (
+                          <div className="flex gap-1.5 text-[9px] font-mono select-none">
+                            <span className="text-emerald-400 bg-emerald-500/5 px-1 rounded" title="Commits ahead of main">
+                              +{metrics.ahead}
+                            </span>
+                            <span className="text-amber-500 bg-amber-500/5 px-1 rounded" title="Commits behind main">
+                              -{metrics.behind}
+                            </span>
+                          </div>
                         )}
                       </div>
                       
@@ -329,7 +399,7 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
 
           </div>
 
-          {/* Interactive animated git graph panel */}
+          {/* Git Graph Visualizer panel */}
           <div className="glass-panel p-5 rounded-2xl border border-white/5">
             <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-1.5">
               <GitBranch className="w-4 h-4 text-purple-400" />
@@ -347,9 +417,48 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
 
         </div>
 
-        {/* RIGHT COLUMN: Branch Comparison & Merge Preview panel (1 column width) */}
+        {/* RIGHT COLUMN: Branch Compare & protections */}
         <div className="space-y-6">
           
+          {/* Branch Protections rules panel */}
+          <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4 text-left">
+            <h3 className="text-xs font-bold text-gray-200 uppercase tracking-widest font-mono flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-purple-400" />
+              Branch Protection Rules
+            </h3>
+            <p className="text-[10px] text-dark-muted leading-relaxed">
+              Define push settings to protect the default branch configuration checks.
+            </p>
+
+            <div className="space-y-3 pt-2">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={restrictDirectPush}
+                  onChange={(e) => setRestrictDirectPush(e.target.checked)}
+                  className="mt-0.5 rounded border-white/10 bg-white/5 text-purple-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+                <div>
+                  <span className="text-[11px] font-bold text-gray-200 group-hover:text-purple-300 transition-colors">Lock Direct Push to main</span>
+                  <p className="text-[9px] text-dark-muted leading-normal mt-0.5">Blocks direct commits to main. Require PR merging checks instead.</p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={requirePR}
+                  onChange={(e) => setRequirePR(e.target.checked)}
+                  className="mt-0.5 rounded border-white/10 bg-white/5 text-purple-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+                <div>
+                  <span className="text-[11px] font-bold text-gray-200 group-hover:text-purple-300 transition-colors">Require Pull Request reviews</span>
+                  <p className="text-[9px] text-dark-muted leading-normal mt-0.5">Requires reviews approvals on PRs before they can merge.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
           {/* Branch Compare Widget */}
           <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
             <h3 className="text-xs font-bold text-gray-200 uppercase tracking-widest font-mono flex items-center gap-1.5">
@@ -429,16 +538,43 @@ export const BranchesPage: React.FC<BranchesPageProps> = ({
                   )}
 
                   {compareResults.mergeStatus.status === 'conflict' && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex items-start gap-2 text-[10px] text-red-400">
-                      <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 animate-pulse" />
-                      <div className="min-w-0">
-                        <strong>Merge Conflicts Detected.</strong>
-                        <p className="text-[9px] text-dark-muted mt-1 font-mono">Conflicting Files:</p>
-                        <ul className="list-disc pl-4 mt-0.5 font-mono text-[8px] text-red-300">
-                          {compareResults.mergeStatus.conflictingFiles?.map(f => (
-                            <li key={f}>{f}</li>
-                          ))}
-                        </ul>
+                    <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex flex-col gap-2.5 text-[10px] text-red-400">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 animate-pulse" />
+                        <div className="min-w-0">
+                          <strong>Merge Conflicts Detected.</strong>
+                          <p className="text-[9px] text-dark-muted mt-1 font-mono">Conflicting Files (Click to Preview Conflict):</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {compareResults.mergeStatus.conflictingFiles?.map(f => {
+                          const isExpanded = expandedConflictFile === f;
+                          return (
+                            <div key={f} className="rounded-lg border border-red-500/20 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedConflictFile(isExpanded ? null : f)}
+                                className="w-full px-3 py-1.5 bg-red-500/5 hover:bg-red-500/10 flex items-center justify-between text-[10px] font-mono font-bold"
+                              >
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <FileCode className="w-3.5 h-3.5 text-red-400" />
+                                  {f}
+                                </span>
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                              
+                              {isExpanded && (
+                                <div className="bg-[#05080f] p-2.5 font-mono text-[9px] text-gray-400 leading-normal border-t border-red-500/10 text-left overflow-x-auto whitespace-pre">
+                                  <span>{`<<<<<<< ${compareTarget}
+// local changes in files
+=======
+// incoming source changes
+>>>>>>> ${compareSource}`}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
