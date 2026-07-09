@@ -267,20 +267,24 @@ function App() {
       {/* Sidebar Navigation */}
       <aside className="w-64 bg-[#080d17] border-r border-white/5 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
-          {/* Logo Brand */}
-          <div className="p-6 border-b border-white/5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
+          {/* Logo Brand (Clickable to return to Landing Page) */}
+          <button
+            onClick={() => setCurrentPage('landing')}
+            className="w-full p-6 border-b border-white/5 flex items-center gap-3 text-left hover:bg-white/[0.02] active:bg-white/[0.04] transition-all focus:outline-none group"
+            title="Return to Landing Page"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-glow group-hover:scale-105 transition-transform">
               <Bot className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
+              <h2 className="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5 group-hover:text-purple-400 transition-colors">
                 GitForge
               </h2>
-              <span className="text-[10px] text-purple-400 font-mono font-medium tracking-wide uppercase">
+              <span className="text-[10px] text-purple-400 font-mono font-medium tracking-wide uppercase block">
                 Collab Simulator
               </span>
             </div>
-          </div>
+          </button>
 
           {/* Nav Links */}
           <nav className="p-4 space-y-1">
