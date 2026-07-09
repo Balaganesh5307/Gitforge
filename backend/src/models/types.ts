@@ -96,7 +96,7 @@ export interface Issue {
 export interface Activity {
   id: string;
   repoId: string;
-  type: 'commit' | 'pr_open' | 'pr_merge' | 'pr_review' | 'issue_open' | 'issue_resolve' | 'branch_create' | 'branch_delete';
+  type: 'commit' | 'pr_open' | 'pr_merge' | 'pr_review' | 'issue_open' | 'issue_resolve' | 'branch_create' | 'branch_delete' | 'branch_rename';
   message: string;
   user: string;
   createdAt: string;
