@@ -4,12 +4,21 @@ import { Store } from './services/Store';
 import { GitEngine } from './services/GitEngine';
 import { BotService } from './services/BotService';
 import { TerminalParser } from './services/TerminalParser';
+import { signup, login, verifyEmail, forgotPassword, resetPassword, getMe, requireAuth } from './controllers/AuthController';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+
+// AUTHENTICATION ROUTES
+app.post('/api/auth/signup', signup);
+app.post('/api/auth/login', login);
+app.post('/api/auth/verify', verifyEmail);
+app.post('/api/auth/forgot-password', forgotPassword);
+app.post('/api/auth/reset-password', resetPassword);
+app.get('/api/auth/me', requireAuth, getMe as any);
 
 // API STATUS
 app.get('/api/health', (req, res) => {

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { DbData, Member, Repository, Branch, Commit, PullRequest, Issue, Activity } from '../models/types';
+import { DbData, Member, Repository, Branch, Commit, PullRequest, Issue, Activity, User } from '../models/types';
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -336,7 +336,8 @@ class StoreService {
       commits: [],
       pullRequests: [],
       issues: [],
-      activities: []
+      activities: [],
+      users: []
     };
     this.init();
   }
@@ -350,6 +351,9 @@ class StoreService {
       if (fs.existsSync(DB_FILE)) {
         const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(fileContent);
+        if (!this.data.users) {
+          this.data.users = [];
+        }
       } else {
         // Pre-populate database
         this.data = {
@@ -359,7 +363,8 @@ class StoreService {
           commits: INIT_COMMITS,
           pullRequests: DEFAULT_PRS,
           issues: DEFAULT_ISSUES,
-          activities: DEFAULT_ACTIVITIES
+          activities: DEFAULT_ACTIVITIES,
+          users: []
         };
         this.save();
       }
@@ -373,7 +378,8 @@ class StoreService {
         commits: INIT_COMMITS,
         pullRequests: DEFAULT_PRS,
         issues: DEFAULT_ISSUES,
-        activities: DEFAULT_ACTIVITIES
+        activities: DEFAULT_ACTIVITIES,
+        users: []
       };
     }
   }
@@ -546,6 +552,33 @@ class StoreService {
     this.data.activities.push(newActivity);
     this.save();
     return newActivity;
+  }
+
+  // Users Helpers
+  public getUsers(): User[] {
+    return this.data.users || [];
+  }
+
+  public getUserByEmail(email: string): User | undefined {
+    return this.getUsers().find(u => u.email.toLowerCase() === email.toLowerCase());
+  }
+
+  public getUserById(id: string): User | undefined {
+    return this.getUsers().find(u => u.id === id);
+  }
+
+  public saveUser(user: User): User {
+    if (!this.data.users) {
+      this.data.users = [];
+    }
+    const idx = this.data.users.findIndex(u => u.id === user.id);
+    if (idx !== -1) {
+      this.data.users[idx] = user;
+    } else {
+      this.data.users.push(user);
+    }
+    this.save();
+    return user;
   }
 }
 

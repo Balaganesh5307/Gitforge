@@ -10,6 +10,7 @@ import { BranchGraph } from './components/BranchGraph';
 import { TerminalSimulator } from './components/TerminalSimulator';
 import { MergeConflictVisualizer } from './components/MergeConflictVisualizer';
 import { LandingPage } from './pages/LandingPage';
+import { AuthPage } from './pages/AuthPage';
 import {
   LayoutDashboard,
   GitBranch,
@@ -34,13 +35,51 @@ function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [latency, setLatency] = useState(3);
+  
+  // Auth state
+  const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
+  // Sync state latency
   useEffect(() => {
     const interval = setInterval(() => {
       setLatency(Math.floor(Math.random() * 5) + 2);
     }, 4500);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch logged in user profile on load
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        if (response.ok) {
+          setUser(data.user);
+        } else {
+          // Reset session
+          localStorage.removeItem('token');
+          setToken(null);
+          setUser(null);
+        }
+      } catch (err) {
+        console.error('Session authentication failed:', err);
+      }
+    };
+    fetchProfile();
+  }, [token]);
+
+  // Protected route guard redirecting unauthenticated sessions
+  useEffect(() => {
+    const publicPages = ['landing', 'login', 'signup'];
+    if (!publicPages.includes(currentPage) && !token) {
+      setCurrentPage('login');
+    }
+  }, [currentPage, token]);
   
   // Repo States
   const [repo, setRepo] = useState<Repository | null>(null);
@@ -271,7 +310,31 @@ function App() {
   };
 
   if (currentPage === 'landing') {
-    return <LandingPage onLaunch={() => setCurrentPage('dashboard')} />;
+    return (
+      <LandingPage
+        onLaunch={() => {
+          if (token) {
+            setCurrentPage('dashboard');
+          } else {
+            setCurrentPage('login');
+          }
+        }}
+      />
+    );
+  }
+
+  if (currentPage === 'login' || currentPage === 'signup') {
+    return (
+      <AuthPage
+        initialView={currentPage}
+        onAuthSuccess={(t, u) => {
+          localStorage.setItem('token', t);
+          setToken(t);
+          setUser(u);
+          setCurrentPage('dashboard');
+        }}
+      />
+    );
   }
 
   return (
@@ -352,18 +415,29 @@ function App() {
         </div>
 
         {/* User Context & Info */}
-        <div className="p-4 border-t border-white/5 bg-[#090e19]">
+        <div className="p-4 border-t border-white/5 bg-[#090e19] flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <img
-              src="https://api.dicebear.com/7.x/adventurer/svg?seed=you"
+              src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${user?.username || 'you'}`}
               alt="You"
               className="w-8 h-8 rounded-full border border-white/10 bg-slate-900"
             />
-            <div>
-              <h4 className="text-xs font-bold text-gray-200">User Developer</h4>
-              <span className="text-[10px] text-dark-muted font-mono">Role: Project Owner</span>
+            <div className="min-w-0 flex-1 text-left">
+              <h4 className="text-xs font-bold text-gray-200 truncate">{user?.username || 'User Developer'}</h4>
+              <span className="text-[9px] text-dark-muted font-mono truncate block">{user?.email || 'Role: Project Owner'}</span>
             </div>
           </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('token');
+              setToken(null);
+              setUser(null);
+              setCurrentPage('landing');
+            }}
+            className="w-full py-1.5 bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 text-gray-400 rounded-lg text-[10px] font-bold font-mono transition-all uppercase tracking-wider"
+          >
+            Sign Out Session
+          </button>
         </div>
       </aside>
 
