@@ -102,6 +102,18 @@ export interface Activity {
   createdAt: string;
 }
 
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  passwordHash: string;
+  isVerified: boolean;
+  verificationCode?: string;
+  resetPasswordToken?: string;
+  resetPasswordExpires?: string;
+  createdAt: string;
+}
+
 export interface DbData {
   members: Member[];
   repositories: Repository[];
@@ -110,4 +122,5 @@ export interface DbData {
   pullRequests: PullRequest[];
   issues: Issue[];
   activities: Activity[];
+  users: User[];
 }
