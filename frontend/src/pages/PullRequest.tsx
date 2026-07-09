@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { PullRequest, Branch, Commit, PRComment, Member } from '../types';
+import { PullRequest, Branch, Commit, PRComment } from '../types';
 import {
   GitPullRequest,
   CheckCircle2,
@@ -11,8 +11,12 @@ import {
   Plus,
   Send,
   Eye,
-  ArrowRight
+  X,
+  FileCode2,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface PullRequestProps {
   repoId: string;
@@ -45,14 +49,23 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
   const [sourceBranch, setSourceBranch] = useState(currentBranch);
   const [targetBranch, setTargetBranch] = useState('main');
 
-  // Comment state
+  // General conversation comment state
   const [commentText, setCommentText] = useState('');
   
+  // Inline comment state
+  const [activeInlineCommentKey, setActiveInlineCommentKey] = useState<string | null>(null); // e.g. "filename:line"
+  const [inlineCommentText, setInlineCommentText] = useState('');
+
+  // Submit Review state
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState<'approved' | 'changes_requested' | 'comment'>('approved');
+  const [reviewBody, setReviewBody] = useState('');
+
   // PR Commits & Diff states
   const [prCommits, setPrCommits] = useState<Commit[]>([]);
   const [loadingPrDetails, setLoadingPrDetails] = useState(false);
 
-  // Fetch PRs
+  // Fetch PRs list
   const fetchPRs = async () => {
     try {
       const response = await fetch(`http://localhost:5000/api/repos/${repoId}/pulls`);
@@ -78,9 +91,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     const fetchPRDetails = async () => {
       setLoadingPrDetails(true);
       try {
-        // Fetch commits for source branch
         const srcRes = await fetch(`http://localhost:5000/api/repos/${repoId}/commits/branch/${activePR.sourceBranch}`);
-        // Fetch commits for target branch
         const tgtRes = await fetch(`http://localhost:5000/api/repos/${repoId}/commits/branch/${activePR.targetBranch}`);
         
         if (srcRes.ok && tgtRes.ok) {
@@ -101,6 +112,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     fetchPRDetails();
   }, [activePrId, prs]);
 
+  // Create PR
   const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -130,9 +142,32 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     }
   };
 
+  // Close PR
+  const handleClosePR = async () => {
+    if (!activePrId) return;
+    if (!confirm('Are you sure you want to close this pull request without merging?')) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/pulls/${activePrId}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: 'you' })
+      });
+
+      if (response.ok) {
+        await fetchPRs();
+        onRefreshRepo();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Add Comment (General or Inline)
   const handleAddComment = async (e: React.FormEvent, filename?: string, line?: number) => {
     e.preventDefault();
-    if (!commentText.trim() || !activePrId) return;
+    const text = filename ? inlineCommentText : commentText;
+    if (!text.trim() || !activePrId) return;
 
     try {
       const response = await fetch(`http://localhost:5000/api/repos/${repoId}/pulls/${activePrId}/comments`, {
@@ -140,15 +175,19 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           author: 'you',
-          body: commentText,
+          body: text,
           filename,
           line
         })
       });
 
       if (response.ok) {
-        setCommentText('');
-        // Refresh local PR list
+        if (filename) {
+          setInlineCommentText('');
+          setActiveInlineCommentKey(null);
+        } else {
+          setCommentText('');
+        }
         await fetchPRs();
       }
     } catch (err) {
@@ -156,6 +195,34 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     }
   };
 
+  // Submit Review Panel
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activePrId) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/repos/${repoId}/pulls/${activePrId}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          author: 'you',
+          status: reviewStatus,
+          body: reviewBody || (reviewStatus === 'approved' ? 'Approved these changes!' : 'Please review requested modifications.')
+        })
+      });
+
+      if (response.ok) {
+        setReviewBody('');
+        setShowReviewPanel(false);
+        await fetchPRs();
+        onRefreshRepo();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Merge PR
   const handleMergePR = async () => {
     if (!activePrId) return;
     try {
@@ -171,7 +238,6 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
           await fetchPRs();
           onRefreshRepo();
         } else if (result.status === 'conflict') {
-          // Trigger conflict resolution screen
           onTriggerConflictVisualizer({
             sourceBranch: activePR!.sourceBranch,
             targetBranch: activePR!.targetBranch,
@@ -185,6 +251,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     }
   };
 
+  // Trigger Review Bot Simulation
   const handleTriggerBotReview = async () => {
     if (!activePrId) return;
     try {
@@ -199,18 +266,15 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
     }
   };
 
-  // Compile all files changed across the commits on this PR
+  // Compile modified files list
   const filesChangedList = useMemo(() => {
     const filesMap = new Map<string, { filename: string; status: string; additions: number; deletions: number; content: string }>();
-    
-    // Sort oldest first to compile changes
     const ordered = [...prCommits].reverse();
     ordered.forEach(commit => {
       commit.filesChanged.forEach(f => {
         filesMap.set(f.filename, f);
       });
     });
-
     return Array.from(filesMap.values());
   }, [prCommits]);
 
@@ -219,8 +283,8 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Page Title / Trigger creation */}
-      <div className="flex items-center justify-between">
+      {/* Header controls */}
+      <div className="flex items-center justify-between text-left">
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold text-gray-100 flex items-center gap-2">
             <GitPullRequest className="w-6 h-6 text-purple-400" />
@@ -247,20 +311,19 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
       {/* 1. CREATION SCREEN */}
       {isCreating && (
-        <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4">
+        <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-4 text-left">
           <h2 className="text-md font-bold text-gray-200">Open a New Pull Request</h2>
           <form onSubmit={handleCreatePR} className="space-y-4">
             
-            {/* Branch Selectors */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                   Base Branch (Target)
                 </label>
                 <select
                   value={targetBranch}
                   onChange={(e) => setTargetBranch(e.target.value)}
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50"
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
                 >
                   {branches.map(b => (
                     <option key={b.name} value={b.name}>{b.name}</option>
@@ -269,13 +332,13 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                   Compare Branch (Source)
                 </label>
                 <select
                   value={sourceBranch}
                   onChange={(e) => setSourceBranch(e.target.value)}
-                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50"
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 cursor-pointer"
                 >
                   {branches.map(b => (
                     <option key={b.name} value={b.name}>{b.name}</option>
@@ -284,9 +347,8 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
               </div>
             </div>
 
-            {/* Title */}
             <div>
-              <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                 PR Title
               </label>
               <input
@@ -294,13 +356,12 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="feat: add JWT auth middleware"
-                className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 placeholder-gray-600"
+                className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500/50 placeholder-gray-600 font-semibold"
               />
             </div>
 
-            {/* Description */}
             <div>
-              <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-semibold text-dark-muted uppercase tracking-wider mb-1.5 font-mono">
                 Description
               </label>
               <textarea
@@ -316,13 +377,13 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-semibold transition-all"
+                className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold transition-all animate-none"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-all shadow-glow"
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-glow"
               >
                 Create Pull Request
               </button>
@@ -333,7 +394,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
       {/* 2. PR DETAILS VIEW */}
       {activePR && (
-        <div className="space-y-6">
+        <div className="space-y-6 text-left">
           
           {/* Back button & Status header */}
           <div className="glass-panel p-5 rounded-2xl border border-white/5">
@@ -349,11 +410,11 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h2 className="text-lg font-bold text-gray-100">
-                  {activePR.title} <span className="text-gray-500">#{activePR.id.replace('pr-', '')}</span>
+                <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+                  {activePR.title} <span className="text-gray-500 font-mono">#{activePR.id.replace('pr-', '')}</span>
                 </h2>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1 ${
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
                     activePR.status === 'open'
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                       : activePR.status === 'merged'
@@ -375,22 +436,111 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                 </div>
               </div>
 
-              {/* Merge Controls if open */}
+              {/* Controls if open */}
               {activePR.status === 'open' && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 relative">
+                  
                   <button
                     onClick={handleTriggerBotReview}
-                    className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-all flex items-center gap-1.5"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-all"
                   >
                     Request Bot Review
                   </button>
+
+                  <button
+                    onClick={() => setShowReviewPanel(!showReviewPanel)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-500/15 border border-purple-500/20 hover:bg-purple-600 hover:text-white text-purple-300 transition-all flex items-center gap-1"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" /> Submit Review
+                  </button>
+
                   <button
                     onClick={handleMergePR}
-                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-glow flex items-center gap-1.5 transition-all"
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-glow flex items-center gap-1 transition-all"
                   >
-                    <GitMerge className="w-4 h-4" />
-                    Merge Pull Request
+                    <GitMerge className="w-4 h-4" /> Merge
                   </button>
+
+                  <button
+                    onClick={handleClosePR}
+                    className="px-3 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-600 hover:text-white text-red-400 text-xs font-semibold rounded-lg transition-all"
+                  >
+                    Close PR
+                  </button>
+
+                  {/* SUBMIT REVIEW POPUP PANEL */}
+                  <AnimatePresence>
+                    {showReviewPanel && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 top-10 w-72 glass-panel premium-navbar rounded-xl border border-white/10 p-4 shadow-2xl z-40 bg-[#090d16]"
+                      >
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5 mb-3">
+                          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest font-mono">Code Review Board</span>
+                          <X className="w-3.5 h-3.5 text-gray-400 hover:text-white cursor-pointer" onClick={() => setShowReviewPanel(false)} />
+                        </div>
+                        
+                        <form onSubmit={handleSubmitReview} className="space-y-3">
+                          <div>
+                            <span className="text-[9px] font-bold font-mono text-dark-muted uppercase tracking-wider block mb-1.5">Action Status</span>
+                            <div className="flex flex-col gap-1.5 text-xs">
+                              <label className="flex items-center gap-2 cursor-pointer font-semibold text-emerald-400">
+                                <input
+                                  type="radio"
+                                  name="review_status"
+                                  checked={reviewStatus === 'approved'}
+                                  onChange={() => setReviewStatus('approved')}
+                                  className="text-purple-600 focus:ring-0 focus:ring-offset-0 bg-[#05080f] border-white/10 cursor-pointer"
+                                />
+                                Approve
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer font-semibold text-red-400">
+                                <input
+                                  type="radio"
+                                  name="review_status"
+                                  checked={reviewStatus === 'changes_requested'}
+                                  onChange={() => setReviewStatus('changes_requested')}
+                                  className="text-purple-600 focus:ring-0 focus:ring-offset-0 bg-[#05080f] border-white/10 cursor-pointer"
+                                />
+                                Request Changes
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-300">
+                                <input
+                                  type="radio"
+                                  name="review_status"
+                                  checked={reviewStatus === 'comment'}
+                                  onChange={() => setReviewStatus('comment')}
+                                  className="text-purple-600 focus:ring-0 focus:ring-offset-0 bg-[#05080f] border-white/10 cursor-pointer"
+                                />
+                                Comment Feedback
+                              </label>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[9px] font-bold font-mono text-dark-muted uppercase tracking-wider block mb-1">Review Summary</span>
+                            <textarea
+                              value={reviewBody}
+                              onChange={(e) => setReviewBody(e.target.value)}
+                              placeholder="Review description details..."
+                              rows={3}
+                              className="w-full bg-[#05080f] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-purple-500/40"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-lg text-xs transition-all"
+                          >
+                            Submit Review
+                          </button>
+                        </form>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                 </div>
               )}
             </div>
@@ -414,7 +564,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                   <tab.icon className="w-3.5 h-3.5" />
                   {tab.label}
                   {tab.count !== undefined && (
-                    <span className="text-[10px] bg-white/5 px-1 py-0.2 rounded-full text-dark-muted border border-white/5">
+                    <span className="text-[10px] bg-white/5 px-1.5 py-0.2 rounded-full text-dark-muted border border-white/5">
                       {tab.count}
                     </span>
                   )}
@@ -431,7 +581,6 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
             {activeTab === 'conversation' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                {/* Comments & Reviews Timeline */}
                 <div className="lg:col-span-2 space-y-6">
                   {/* PR Description card */}
                   <div className="glass-panel p-5 rounded-2xl border border-white/5 relative bg-[#0d1321]/30">
@@ -446,7 +595,6 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
                   {/* Reviews & comments timeline */}
                   <div className="space-y-4">
-                    {/* Combine comments and reviews sorted by time */}
                     {(() => {
                       const timeline: any[] = [];
                       activePR.comments.forEach(c => timeline.push({ type: 'comment', data: c }));
@@ -459,7 +607,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                       if (sortedTimeline.length === 0) {
                         return (
                           <div className="text-center py-6 text-dark-muted font-mono text-xs">
-                            No reviews or comments yet. Run a Bot Review or write a feedback message!
+                            No reviews or comments yet.
                           </div>
                         );
                       }
@@ -520,25 +668,19 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                       <button
                         type="submit"
                         disabled={!commentText.trim()}
-                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5 shadow-glow disabled:shadow-none"
+                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5 shadow-glow"
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        Comment
+                        <Send className="w-3.5 h-3.5" /> Comment
                       </button>
                     </div>
                   </form>
                 </div>
 
-                {/* Right Side: Status Banners / Review Checklist */}
+                {/* Right Side Checklists */}
                 <div className="space-y-4">
-                  
-                  {/* PR Health & Conflict details */}
                   <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
                     <h3 className="text-xs font-semibold text-dark-muted uppercase tracking-wider">Merge Checklist</h3>
-                    
                     <div className="space-y-3">
-                      
-                      {/* Conflict checks */}
                       <div className="flex items-start gap-2.5 text-xs">
                         <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold font-mono text-[9px] mt-0.5 ${
                           hasConflictComment ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
@@ -555,7 +697,6 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                         </div>
                       </div>
 
-                      {/* Bot Review checks */}
                       <div className="flex items-start gap-2.5 text-xs">
                         <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold font-mono text-[9px] mt-0.5 ${
                           activePR.reviews.some(r => r.status === 'changes_requested')
@@ -577,10 +718,8 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                           </p>
                         </div>
                       </div>
-
                     </div>
                   </div>
-
                 </div>
 
               </div>
@@ -592,7 +731,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                 {loadingPrDetails ? (
                   <div className="py-6 text-center text-xs text-dark-muted animate-pulse">Loading commits list...</div>
                 ) : prCommits.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-dark-muted font-mono">No new commits on this branch since parent branching.</div>
+                  <div className="py-6 text-center text-xs text-dark-muted font-mono">No new commits on this branch.</div>
                 ) : (
                   <div className="divide-y divide-white/5">
                     {prCommits.map(commit => (
@@ -610,7 +749,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
               </div>
             )}
 
-            {/* FILES CHANGED TAB */}
+            {/* FILES CHANGED TAB & INLINE COMMENTS */}
             {activeTab === 'files' && (
               <div className="space-y-6">
                 {loadingPrDetails ? (
@@ -620,36 +759,121 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
                 ) : (
                   filesChangedList.map((file: any) => {
                     const lines = file.content.split('\n');
+                    
+                    // Filter inline comments for this specific file
+                    const fileComments = activePR.comments.filter(c => c.filename === file.filename);
+
                     return (
                       <div key={file.filename} className="glass-panel rounded-2xl border border-white/5 overflow-hidden">
                         
-                        {/* File details banner */}
                         <div className="px-5 py-3 bg-[#0b0f19] border-b border-white/5 flex justify-between items-center">
-                          <span className="text-xs font-mono text-gray-300 font-semibold">{file.filename}</span>
-                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 capitalize">
+                          <span className="text-xs font-mono text-gray-300 font-semibold flex items-center gap-1.5">
+                            <FileCode2 className="w-4 h-4 text-purple-400" />
+                            {file.filename}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 capitalize font-bold">
                             {file.status}
                           </span>
                         </div>
 
-                        {/* File code view with simulated Diff colors */}
+                        {/* Code Lines with Hover Comments */}
                         <div className="bg-[#05070c]/90 overflow-x-auto font-mono text-sm leading-relaxed p-4 select-text">
                           <div className="space-y-0.5 min-w-[500px]">
                             {lines.map((line: string, idx: number) => {
-                              // Simulate diff line styles based on content
-                              // Green background/text for additions, red for edits or just style them nicely
+                              const lineNumber = idx + 1;
                               const isAddition = line.includes('import') || line.includes('export') || line.includes('const') || line.trim().startsWith('//');
                               
+                              // Retrieve inline comments for this specific line
+                              const lineComments = fileComments.filter(c => c.line === lineNumber);
+                              
+                              const commentKey = `${file.filename}:${lineNumber}`;
+                              const isCommentInputOpen = activeInlineCommentKey === commentKey;
+
                               return (
-                                <div
-                                  key={idx}
-                                  className={`flex group hover:bg-white/5 px-2.5 py-0.5 rounded transition-all`}
-                                >
-                                  <span className="text-dark-muted text-xs pr-4 border-r border-white/5 w-8 select-none">{idx + 1}</span>
-                                  <pre className={`pl-4 flex-grow ${
-                                    isAddition ? 'text-emerald-400 bg-emerald-500/5' : 'text-gray-300'
-                                  }`}>
-                                    {line || ' '}
-                                  </pre>
+                                <div key={idx} className="flex flex-col border-b border-white/[0.01]">
+                                  
+                                  {/* Code line body */}
+                                  <div className="flex group hover:bg-white/5 px-2.5 py-0.5 rounded transition-all items-center relative">
+                                    {/* Line Number */}
+                                    <span className="text-dark-muted text-xs pr-4 border-r border-white/5 w-8 select-none text-left relative flex items-center justify-between">
+                                      {lineNumber}
+                                      
+                                      {/* Hover add inline comment button */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveInlineCommentKey(isCommentInputOpen ? null : commentKey);
+                                          setInlineCommentText('');
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 absolute left-8 top-0 p-0.5 rounded bg-purple-600 text-white z-10 hover:bg-purple-500 transition-opacity"
+                                        title="Add inline review comment"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                    
+                                    <pre className={`pl-4 flex-grow text-xs ${
+                                      isAddition ? 'text-emerald-400 bg-emerald-500/5' : 'text-gray-300'
+                                    }`}>
+                                      {line || ' '}
+                                    </pre>
+                                  </div>
+
+                                  {/* Existing Inline Comments rendered inside code diff */}
+                                  {lineComments.length > 0 && (
+                                    <div className="pl-12 pr-6 py-2 bg-purple-500/[0.01] border-l-2 border-purple-500 space-y-2 select-text text-left">
+                                      {lineComments.map((comment) => (
+                                        <div key={comment.id} className="p-2.5 rounded-lg bg-[#0b0f19] border border-white/5 text-[11px]">
+                                          <div className="flex justify-between items-center text-dark-muted font-mono mb-1">
+                                            <span className="font-bold text-gray-300">{comment.author === 'you' ? 'You' : comment.author}</span>
+                                            <span>{new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                          </div>
+                                          <p className="text-gray-200">{comment.body}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Inline Comment Input Box */}
+                                  {isCommentInputOpen && (
+                                    <div className="pl-12 pr-6 py-3 border-l-2 border-indigo-500 bg-indigo-500/[0.01]">
+                                      <form
+                                        onSubmit={(e) => handleAddComment(e, file.filename, lineNumber)}
+                                        className="space-y-2 bg-[#090d16] p-3 rounded-lg border border-white/5"
+                                      >
+                                        <div className="text-[10px] text-indigo-400 font-mono font-bold flex items-center justify-between">
+                                          <span>📝 Add Review Comment (Line {lineNumber})</span>
+                                          <X className="w-3 h-3 hover:text-white cursor-pointer" onClick={() => setActiveInlineCommentKey(null)} />
+                                        </div>
+                                        
+                                        <textarea
+                                          value={inlineCommentText}
+                                          onChange={(e) => setInlineCommentText(e.target.value)}
+                                          placeholder="Type line revision request..."
+                                          rows={2}
+                                          className="w-full bg-[#05080f] border border-white/10 rounded-md p-2 text-xs focus:outline-none focus:border-indigo-500/40 text-gray-300"
+                                        />
+
+                                        <div className="flex justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveInlineCommentKey(null)}
+                                            className="px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded text-[10px] font-bold"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            type="submit"
+                                            disabled={!inlineCommentText.trim()}
+                                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold"
+                                          >
+                                            Save Comment
+                                          </button>
+                                        </div>
+                                      </form>
+                                    </div>
+                                  )}
+
                                 </div>
                               );
                             })}
@@ -670,7 +894,7 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
       {/* 3. DEFAULT LIST OF PRS */}
       {!isCreating && !activePrId && (
-        <div className="glass-panel p-5 rounded-2xl border border-white/5">
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 text-left">
           {prs.length === 0 ? (
             <div className="py-12 text-center text-dark-muted font-mono text-xs">
               No pull requests created. Create a branch, commit files, and click "New Pull Request" to collaborate!
@@ -709,12 +933,12 @@ export const PullRequestPage: React.FC<PullRequestProps> = ({
 
                   <div className="flex items-center gap-4">
                     {pr.reviews.length > 0 && (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
                         pr.reviews.some(r => r.status === 'changes_requested')
                           ? 'bg-red-500/10 border-red-500/20 text-red-400'
                           : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                       }`}>
-                        Reviewed ({pr.reviews[pr.reviews.length - 1].status === 'approved' ? 'Approved' : 'Changes Requested'})
+                        {pr.reviews.some(r => r.status === 'changes_requested') ? 'Changes Requested' : 'Approved'}
                       </span>
                     )}
 
